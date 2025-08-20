@@ -7,7 +7,6 @@ const ORG_ENVS: Record<string, string[]> = {
   "vtal-apigeehyb-trg": ["env-apigeehyb-trg"],
   "vtal-apigeeintegracao-prd": ["env-cwprd"]
 };
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const org = searchParams.get('org') || '';

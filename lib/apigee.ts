@@ -14,7 +14,6 @@ export async function gcpAccessToken(scopes: string[] = ["https://www.googleapis
 type KvmEntry = { name: string; value: any };
 type KvmPage = { keyValueEntries?: KvmEntry[]; nextPageToken?: string } | any;
 
-// Lista KVMs de um ambiente (tenta lidar com formatos diferentes)
 export async function listKvms(org: string, env: string): Promise<string[]> {
   const token = await gcpAccessToken();
   const base = process.env.APIGEE_BASE || "https://apigee.googleapis.com";
@@ -26,18 +25,15 @@ export async function listKvms(org: string, env: string): Promise<string[]> {
   if (Array.isArray(data.keyvaluemaps)) {
     return data.keyvaluemaps.map((v: any) => typeof v === "string" ? v : v.name).filter(Boolean);
   }
-  // fallback para formatos inesperados
   return Object.values(data).flat().map((v: any) => typeof v === "string" ? v : v?.name).filter(Boolean);
 }
 
-// Exporta um KVM com paginação + dedup (último vence) + sort
 export async function exportKvm(org: string, env: string, map: string) {
   const token = await gcpAccessToken();
   const base = process.env.APIGEE_BASE || "https://apigee.googleapis.com";
   const pageSize = 100;
   let next = "";
   const all: KvmEntry[] = [];
-
   do {
     const u = new URL(`${base}/v1/organizations/${org}/environments/${env}/keyvaluemaps/${map}/entries`);
     u.searchParams.set("pageSize", String(pageSize));
@@ -48,23 +44,19 @@ export async function exportKvm(org: string, env: string, map: string) {
     if (Array.isArray(data?.keyValueEntries)) all.push(...data.keyValueEntries);
     next = data?.nextPageToken || "";
   } while (next);
-
   const byName = new Map<string, KvmEntry>();
   for (const e of all) byName.set(e.name, e);
   return { keyValueEntries: [...byName.values()].sort((a,b)=>a.name.localeCompare(b.name)), nextPageToken: "" };
 }
 
-// Diff (add/del/alter) entre dois JSONs de KVM
 export function diffKvm(a: {keyValueEntries: KvmEntry[]}, b: {keyValueEntries: KvmEntry[]}) {
   const A = new Map(a.keyValueEntries.map(e=>[e.name, e.value]));
   const B = new Map(b.keyValueEntries.map(e=>[e.name, e.value]));
   const keysA = new Set(A.keys()), keysB = new Set(B.keys());
-
   const add = [...keysB].filter(k => !keysA.has(k));
   const del = [...keysA].filter(k => !keysB.has(k));
   const chg = [...new Set([...keysA, ...keysB])]
     .filter(k => A.get(k) != B.get(k))
     .map(name => ({ name, from: A.get(name), to: B.get(name) }));
-
   return { add, del, chg };
 }

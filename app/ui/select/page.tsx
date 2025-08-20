@@ -1,8 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-
 type ExportResp = { keyValueEntries: {name:string; value:any}[]; nextPageToken: string };
-
 export default function SelectUI() {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState<string>("");
@@ -11,32 +9,21 @@ export default function SelectUI() {
   const [kvms, setKvms] = useState<string[]>([]);
   const [kvm, setKvm] = useState<string>("");
   const [result, setResult] = useState<string>("");
-
+  useEffect(() => { fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
-    fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
-  }, []);
-
-  useEffect(() => {
-    if (!org) return;
-    setEnv(""); setEnvs([]); setKvms([]); setKvm("");
-    fetch(`/api/envs?org=${encodeURIComponent(org)}`)
-      .then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
+    if (!org) return; setEnv(""); setEnvs([]); setKvms([]); setKvm("");
+    fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
   }, [org]);
-
   async function loadKvms() {
     if (!org || !env) return;
     const res = await fetch('/api/kvms', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({org, env})});
-    const data = await res.json();
-    setKvms(Array.isArray(data)? data : []);
+    const data = await res.json(); setKvms(Array.isArray(data)? data : []);
   }
-
   async function exportKvm() {
     if (!org || !env || !kvm) return;
     const res = await fetch('/api/kvm/export', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({org, env, kvm})});
-    const data: ExportResp = await res.json();
-    setResult(JSON.stringify(data, null, 2));
+    const data: ExportResp = await res.json(); setResult(JSON.stringify(data, null, 2));
   }
-
   return (
     <main>
       <h2>Exportar KVM</h2>
@@ -65,7 +52,6 @@ export default function SelectUI() {
         </label>
         <button onClick={exportKvm} disabled={!kvm}>Exportar</button>
       </div>
-
       <pre style={{marginTop:16, background:'#111', color:'#0f0', padding:12, borderRadius:8, overflow:'auto', maxHeight: 480}}>
         {result || 'Resultado aparecerá aqui...'}
       </pre>

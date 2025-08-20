@@ -1,5 +1,4 @@
-import { exportKvm } from "@/lib/apigee";
-
+import { exportKvm } from "../../../../lib/apigee";
 export async function POST(req: Request) {
   const { org, env, kvm } = await req.json();
   if (!org || !env || !kvm) return new Response(JSON.stringify({error:"org/env/kvm requeridos"}), {status:400});

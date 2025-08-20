@@ -1,5 +1,4 @@
-import { diffKvm } from "@/lib/apigee";
-
+import { diffKvm } from "../../../../lib/apigee";
 export async function POST(req: Request) {
   const { before, after } = await req.json();
   if (!before || !after) return new Response(JSON.stringify({error:"before/after requeridos"}), {status:400});
