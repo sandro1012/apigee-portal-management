@@ -9,7 +9,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <body style={{fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans"}}>
-        <div style={{maxWidth: 960, margin: "32px auto", padding: "0 16px"}}>
+        <div style={{maxWidth: 1000, margin: "32px auto", padding: "0 16px"}}>
           {children}
         </div>
       </body>

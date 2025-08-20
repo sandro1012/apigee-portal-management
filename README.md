@@ -1,12 +1,8 @@
 # Apigee KVM Portal – Starter (Token do Usuário ou Service Account)
 
-Backend prioriza: cookie `gcp_token` → `GCP_USER_TOKEN` (env) → Service Account (`GCP_SA_JSON_BASE64`).
+**Novidades**: Dry-run (pré-visualização de diff) e botão "Baixar JSON".
 
-Endpoints:
-- POST /api/kvms
-- POST /api/kvm/export
-- POST /api/kvm/diff
-- POST /api/auth/token (salva cookie)
-- DELETE /api/auth/token
-- GET  /api/_debug/env
-- GET  /api/_debug/token
+Credenciais (prioridade):
+1. cookie `gcp_token` (token do usuário)
+2. env `GCP_USER_TOKEN`
+3. `GCP_SA_JSON_BASE64` (Service Account)
