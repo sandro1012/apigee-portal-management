@@ -1,4 +1,4 @@
-import { gcpAccessToken } from "../../../../../lib/apigee";
+import { gcpAccessToken } from "../../../../lib/apigee";
 
 export async function GET() {
   try {
