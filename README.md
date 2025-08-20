@@ -1,15 +1,12 @@
-# Apigee KVM Portal (Starter – GitHub + Vercel)
+# Apigee KVM Portal – Starter (Token do Usuário ou Service Account)
 
-Starter minimalista para exportar KVM do Apigee com paginação/merge/dedup no backend.
+Backend prioriza: cookie `gcp_token` → `GCP_USER_TOKEN` (env) → Service Account (`GCP_SA_JSON_BASE64`).
 
-## Variáveis de ambiente (Vercel)
-- `GCP_SA_JSON_BASE64` (obrigatória)
-- `APIGEE_BASE` (default: https://apigee.googleapis.com)
-- `GOOGLE_APIGEE_ORGS` (opcional, para popular o menu de orgs)
-
-## Endpoints
-- `POST /api/kvms` → lista KVMs do env
-- `POST /api/kvm/export` → exporta KVM
-- `POST /api/kvm/diff` → diff entre JSONs
-
-> Imports configurados via **caminhos relativos** (compatibilidade imediata).
+Endpoints:
+- POST /api/kvms
+- POST /api/kvm/export
+- POST /api/kvm/diff
+- POST /api/auth/token (salva cookie)
+- DELETE /api/auth/token
+- GET  /api/_debug/env
+- GET  /api/_debug/token
