@@ -4,6 +4,32 @@ type KvmEntry = { name: string; value: any };
 type ExportResp = { keyValueEntries: KvmEntry[]; nextPageToken: string };
 type DiffResp = { add: string[]; del: string[]; chg: {name:string; from:any; to:any}[]; counts?: {add:number; del:number; chg:number} };
 
+function validateKvmSchema(data: any): { ok: boolean; message?: string } {
+  if (!data || typeof data !== 'object') return { ok: false, message: 'JSON raiz deve ser um objeto' };
+  if (!Array.isArray(data.keyValueEntries)) return { ok: false, message: 'keyValueEntries deve ser um array' };
+  for (let i = 0; i < data.keyValueEntries.length; i++) {
+    const it = data.keyValueEntries[i];
+    if (!it || typeof it !== 'object') return { ok: false, message: `item #${i} inválido (não é objeto)` };
+    if (typeof it.name !== 'string' || !it.name.trim()) return { ok: false, message: `item #${i} sem name string` };
+    const v = it.value;
+    const type = typeof v;
+    if (!(type === 'string' || type === 'number' || type === 'boolean')) {
+      return { ok: false, message: `item #${i} (${it.name}) valor deve ser string/number/boolean` };
+    }
+  }
+  // opcional nextPageToken string
+  if (typeof data.nextPageToken !== 'undefined' && typeof data.nextPageToken !== 'string') {
+    return { ok: false, message: 'nextPageToken (quando presente) deve ser string' };
+  }
+  // duplicados?
+  const names = new Set<string>();
+  for (const it of data.keyValueEntries) {
+    if (names.has(it.name)) return { ok: false, message: `chave duplicada: ${it.name}` };
+    names.add(it.name);
+  }
+  return { ok: true };
+}
+
 export default function SelectUI() {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState<string>("");
@@ -71,8 +97,11 @@ export default function SelectUI() {
 
   async function showDiff() {
     try {
-      setEditorStatus("Calculando diff...");
+      setEditorStatus("Validando JSON...");
       const parsed = JSON.parse(editorJson);
+      const check = validateKvmSchema(parsed);
+      if (!check.ok) { setEditorStatus("Schema inválido: " + check.message); return; }
+      setEditorStatus("Calculando diff...");
       const res = await fetch('/api/kvm/dry-run', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ org, env, kvm, data: parsed }) });
       const j: DiffResp | any = await res.json();
       if (!res.ok) { setEditorStatus("Falha: " + (j.error || res.statusText)); return; }
@@ -85,7 +114,8 @@ export default function SelectUI() {
     try {
       setEditorStatus("Validando JSON...");
       const parsed = JSON.parse(editorJson);
-      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.keyValueEntries)) { setEditorStatus("JSON inválido: esperado objeto com keyValueEntries[]."); return; }
+      const check = validateKvmSchema(parsed);
+      if (!check.ok) { setEditorStatus("Schema inválido: " + check.message); return; }
       setEditorStatus("Aplicando diffs...");
       const res = await fetch('/api/kvm/update', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ org, env, kvm, data: parsed }) });
       const j = await res.json();
@@ -99,11 +129,12 @@ export default function SelectUI() {
     if (!org || !env || !newKvmName.trim()) { setCreateMsg("Preencha org/env/nome."); return; }
     const file = fileRef.current?.files?.[0];
     if (!file) { setCreateMsg("Envie o arquivo JSON obrigatório."); return; }
-    setCreateMsg("Processando...");
+    setCreateMsg("Validando JSON...");
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      if (!json || typeof json !== 'object' || !Array.isArray(json.keyValueEntries)) { setCreateMsg("JSON inválido: esperado objeto com keyValueEntries[]."); return; }
+      const check = validateKvmSchema(json);
+      if (!check.ok) { setCreateMsg("Schema inválido: " + check.message); return; }
 
       const fd = new FormData();
       fd.set('org', org);
@@ -112,6 +143,7 @@ export default function SelectUI() {
       fd.set('encrypted', String(newKvmEncrypted));
       fd.set('json', JSON.stringify(json)); // backend espera string json
 
+      setCreateMsg("Criando KVM...");
       const res = await fetch('/api/kvm/create', { method: 'POST', body: fd });
       const j = await res.json();
       if (!res.ok) { setCreateMsg("Falha: " + (j.error || res.statusText)); return; }

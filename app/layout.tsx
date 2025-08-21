@@ -18,6 +18,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div style={{fontWeight:800, letterSpacing:.2, marginBottom:16}}>Portal</div>
             <nav style={{display:"grid", gap:8}}>
               <Link href="/" className="sidebar-link active">Início</Link>
+              <Link href="/ui/products" className="sidebar-link">API Products</Link>
+              <Link href="/ui/apps" className="sidebar-link">Apps</Link>
               <Link href="/ui/select" className="sidebar-link">Gerenciar KVMs</Link>
               <a href="/api/auth/logout" className="sidebar-link" style={{color:"#ff9e9e"}}>Sair</a>
             </nav>
