@@ -15,13 +15,24 @@ export async function POST(req: Request) {
     if (!org) return new Response(JSON.stringify({error:"org obrigatório"}), {status:400});
 
     const token = await getBearer();
-    const url = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts?expand=true&pageSize=1000`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const j = await r.json();
-    if (!r.ok) return new Response(JSON.stringify({error: j.error?.message || r.statusText}), {status:r.status});
 
-    const list = j.apiProduct || j.apiProducts || j;
-    return Response.json(Array.isArray(list) ? list : []);
+    let startKey: string | undefined = undefined;
+    const items: any[] = [];
+    for (let i=0; i<20; i++) {
+      const url = new URL(`https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts`);
+      url.searchParams.set("expand", "true");
+      url.searchParams.set("count", "1000"); // máximo permitido
+      if (startKey) url.searchParams.set("startKey", startKey);
+      const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      const j = await r.json();
+      if (!r.ok) return new Response(JSON.stringify({error: j.error?.message || r.statusText}), {status:r.status});
+      const list = j.apiProduct || j.apiProducts || j;
+      items.push(...(Array.isArray(list) ? list : []));
+      startKey = j.nextPageToken || j.next_key || j.startKey || undefined;
+      if (!startKey) break;
+    }
+
+    return Response.json(items);
   } catch (e:any) {
     return new Response(JSON.stringify({error: e.message || String(e)}), {status:500});
   }

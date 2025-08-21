@@ -58,10 +58,10 @@ export default function AppsPage() {
     setSelected(null);
   }
 
-  async function openApp(appName: string) {
+  async function openAppById(appId: string) {
     if (!org) return;
     setLoadingDetail(true);
-    const res = await fetch(`/api/apps/${encodeURIComponent(appName)}?org=${encodeURIComponent(org)}`);
+    const res = await fetch(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
     const j = await res.json();
     setLoadingDetail(false);
     if (!res.ok) { alert(j.error || "Erro ao carregar app"); return; }
@@ -69,7 +69,7 @@ export default function AppsPage() {
   }
 
   const filtered = items.filter(a => {
-    const t = (a.name || a.appId || "").toLowerCase();
+    const t = (`${a.name} ${a.appId || ''}`).toLowerCase();
     const ql = q.toLowerCase();
     return t.includes(ql);
   });
@@ -119,7 +119,8 @@ export default function AppsPage() {
             </thead>
             <tbody>
               {filtered.map(a => (
-                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}} onClick={()=>openApp(a.name)}>
+                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}}
+                    onClick={()=> a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
                   <td style={{padding:'8px 6px'}}>
                     <div style={{fontWeight:600}}>{a.name}</div>
                     <div className="small" style={{opacity:.8}}>{a.appId}</div>
