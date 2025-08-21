@@ -1,7 +1,10 @@
+
 import { listKvms } from "../../../lib/apigee";
 import { cookies } from "next/headers";
+import { requireSession } from "../../../lib/auth";
 
 export async function POST(req: Request) {
+  try { requireSession(); } catch { return new Response(JSON.stringify({error:"unauthorized"}), {status:401}); }
   const { org, env } = await req.json();
   if (!org || !env) return new Response(JSON.stringify({error:"org/env requeridos"}), {status:400});
   try {

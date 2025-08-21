@@ -1,20 +1,21 @@
+
 import { createKvm, updateKvmToMatch } from "../../../../lib/apigee";
 import { cookies } from "next/headers";
+import { requireSession } from "../../../../lib/auth";
 
 export async function POST(req: Request) {
+  try { requireSession(); } catch { return new Response(JSON.stringify({error:"unauthorized"}), {status:401}); }
   try {
     const ct = req.headers.get("content-type") || "";
     if (!ct.includes("multipart/form-data")) {
       const body = await req.json().catch(()=>null);
-      if (!body) return new Response(JSON.stringify({error:"Envie FormData (multipart) ou JSON com org/env/kvm/json"}), {status:400});
+      if (!body) return new Response(JSON.stringify({error:"Envie FormData ou JSON com org/env/kvm/json"}), {status:400});
       const { org, env, kvm, encrypted = true, json } = body;
       if (!org || !env || !kvm) return new Response(JSON.stringify({error:"org/env/kvm requeridos"}), {status:400});
       const data = typeof json === 'string' ? JSON.parse(json) : json;
       const bearer = cookies().get("gcp_token")?.value;
       await createKvm(org, env, kvm, !!encrypted, bearer);
-      if (data?.keyValueEntries?.length) {
-        await updateKvmToMatch(org, env, kvm, data, bearer);
-      }
+      if (data?.keyValueEntries?.length) await updateKvmToMatch(org, env, kvm, data, bearer);
       return Response.json({ ok:true });
     }
     const form = await req.formData();
@@ -27,11 +28,7 @@ export async function POST(req: Request) {
     const data = JSON.parse(jsonStr);
     const bearer = cookies().get("gcp_token")?.value;
     await createKvm(org, env, kvm, encrypted, bearer);
-    if (data?.keyValueEntries?.length) {
-      await updateKvmToMatch(org, env, kvm, data, bearer);
-    }
+    if (data?.keyValueEntries?.length) await updateKvmToMatch(org, env, kvm, data, bearer);
     return Response.json({ ok:true });
-  } catch (e:any) {
-    return new Response(JSON.stringify({ error: e.message || String(e) }), { status: 500 });
-  }
+  } catch (e:any) { return new Response(JSON.stringify({ error: e.message || String(e) }), { status: 500 }); }
 }
