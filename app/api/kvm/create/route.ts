@@ -1,6 +1,6 @@
-import { createKvm, updateKvmToMatch } from "../../../../../lib/apigee";
+import { createKvm, updateKvmToMatch } from "../../../../lib/apigee";
 import { cookies } from "next/headers";
-import { requireSession } from "../../../../../lib/auth";
+import { requireSession } from "../../../../lib/auth";
 
 export async function POST(req: Request) {
   try { requireSession(); } catch { return new Response(JSON.stringify({error:"unauthorized"}), {status:401}); }
