@@ -17,17 +17,16 @@ export async function POST(req: Request) {
 
     let startKey: string | undefined = undefined;
     const items: any[] = [];
-    for (let i=0; i<10; i++) {
+    for (let i=0; i<20; i++) {
       const url = new URL(`https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apps`);
-      url.searchParams.set("includeDevelopers", "true");
-      url.searchParams.set("pageSize", "1000");
+      url.searchParams.set("expand", "true");
       if (startKey) url.searchParams.set("startKey", startKey);
       const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
       const j = await r.json();
       if (!r.ok) return new Response(JSON.stringify({error: j.error?.message || r.statusText}), {status:r.status});
-      const list = Array.isArray(j.app) ? j.app : (Array.isArray(j.apps) ? j.apps : (Array.isArray(j) ? j : []));
-      items.push(...list);
-      startKey = j.nextPageToken || j.next_key || undefined;
+      const list = (j.app || j.apps || j) as any[];
+      items.push(...(Array.isArray(list) ? list : []));
+      startKey = j.nextPageToken || j.next_key || j.startKey || undefined;
       if (!startKey) break;
     }
 
