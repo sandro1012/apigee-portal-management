@@ -1,7 +1,7 @@
-import { createKvm, updateKvmToMatch } from "../../../lib/apigee";
+import { createKvm, updateKvmToMatch } from "../../../../lib/apigee"; // root/lib
 import { cookies } from "next/headers";
-import { requireSession } from "../../../lib/auth";
-import { kvmSchema } from "../../../lib/schema/kvm";
+import { requireSession } from "../../../../lib/auth"; // root/lib
+import { kvmSchema } from "../../../lib/schema/kvm"; // app/lib
 
 export async function POST(req: Request) {
   try { requireSession(); } catch { return new Response(JSON.stringify({error:"unauthorized"}), {status:401}); }
