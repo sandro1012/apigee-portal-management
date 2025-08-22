@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Credential = {
   consumerKey: string;
@@ -30,9 +30,11 @@ export default function AppsPage() {
   const [items, setItems] = useState<AppItem[]>([]);
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<AppDetail|null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenMsg, setTokenMsg] = useState("");
+
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [page, setPage] = useState<number>(1);
 
   useEffect(() => { fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
@@ -56,23 +58,24 @@ export default function AppsPage() {
     if (!res.ok) { alert(j.error || "Erro ao listar apps"); return; }
     setItems(Array.isArray(j) ? j : []);
     setSelected(null);
+    setPage(1);
   }
 
   async function openAppById(appId: string) {
     if (!org) return;
-    setLoadingDetail(true);
     const res = await fetch(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
     const j = await res.json();
-    setLoadingDetail(false);
     if (!res.ok) { alert(j.error || "Erro ao carregar app"); return; }
     setSelected(j);
   }
 
-  const filtered = items.filter(a => {
-    const t = (`${a.name} ${a.appId || ''}`).toLowerCase();
-    const ql = q.toLowerCase();
-    return t.includes(ql);
-  });
+  const filtered = useMemo(() => {
+    const t = q.toLowerCase();
+    return items.filter(a => (`${a.name} ${a.appId||''}`).toLowerCase().includes(t));
+  }, [items, q]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageItems = filtered.slice((page-1)*pageSize, (page)*pageSize);
 
   return (
     <main>
@@ -105,6 +108,14 @@ export default function AppsPage() {
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
           <button onClick={loadApps} disabled={!org}>Listar apps</button>
           <input placeholder="filtrar..." value={q} onChange={e=>setQ(e.target.value)} style={{flex:1}} />
+          <label className="small" style={{display:'flex', alignItems:'center', gap:6}}>
+            por página:
+            <select value={pageSize} onChange={e=>{ setPageSize(parseInt(e.target.value || '10')); setPage(1); }}>
+              <option value={10}>10</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -118,7 +129,7 @@ export default function AppsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(a => (
+              {pageItems.map(a => (
                 <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}}
                     onClick={()=> a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
                   <td style={{padding:'8px 6px'}}>
@@ -128,9 +139,15 @@ export default function AppsPage() {
                   <td style={{padding:'8px 6px'}}>{a.status || '-'}</td>
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={2} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
+              {pageItems.length===0 && <tr><td colSpan={2} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
             </tbody>
           </table>
+
+          <div style={{display:'flex', gap:8, alignItems:'center', justifyContent:'flex-end', marginTop:8}}>
+            <button onClick={()=> setPage(p=> Math.max(1, p-1))} disabled={page<=1}>Anterior</button>
+            <span className="small">Página {page} de {totalPages}</span>
+            <button onClick={()=> setPage(p=> Math.min(totalPages, p+1))} disabled={page>=totalPages}>Próxima</button>
+          </div>
         </div>
 
         <div className="card">

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type ApiProduct = {
   name: string;
@@ -8,6 +8,8 @@ type ApiProduct = {
   description?: string;
   attributes?: { name: string; value: string }[];
   apiResources?: string[];
+  proxies?: string[];
+  environments?: string[];
   createdAt?: string;
   lastModifiedAt?: string;
 };
@@ -21,6 +23,12 @@ export default function ProductsPage() {
   const [q, setQ] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [tokenMsg, setTokenMsg] = useState("");
+
+  const [selected, setSelected] = useState<ApiProduct|null>(null);
+  const [detail, setDetail] = useState<ApiProduct|null>(null);
+  const [resources, setResources] = useState<string[]>([]);
+  const [newRes, setNewRes] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
@@ -43,14 +51,40 @@ export default function ProductsPage() {
     const j = await res.json();
     if (!res.ok) { alert(j.error || "Erro ao listar products"); return; }
     setItems(Array.isArray(j) ? j : []);
+    setSelected(null);
+    setDetail(null);
   }
 
-  const filtered = items.filter(p => {
-    const t = (p.displayName || p.name || "").toLowerCase();
-    const d = (p.description || "").toLowerCase();
+  async function openDetail(p: ApiProduct) {
+    if (!org) return;
+    setSelected(p);
+    const res = await fetch(`/api/products/${encodeURIComponent(p.name)}?org=${encodeURIComponent(org)}`);
+    const j = await res.json();
+    if (!res.ok) { alert(j.error || "Erro ao carregar produto"); return; }
+    setDetail(j);
+    setResources(j.apiResources || []);
+  }
+
+  async function saveResources() {
+    if (!org || !selected) return;
+    setSaving(true);
+    const res = await fetch(`/api/products/${encodeURIComponent(selected.name)}/update`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ org, apiResources: resources })
+    });
+    const j = await res.json().catch(()=>({}));
+    setSaving(false);
+    if (!res.ok) { alert(j.error || "Falha ao atualizar"); return; }
+    alert("Atualizado!");
+    // reload detail
+    openDetail(selected);
+  }
+
+  const filtered = useMemo(()=> {
     const ql = q.toLowerCase();
-    return t.includes(ql) || d.includes(ql);
-  });
+    return items.filter(p => (p.displayName||p.name||'').toLowerCase().includes(ql) || (p.description||'').toLowerCase().includes(ql));
+  }, [items, q]);
 
   return (
     <main>
@@ -86,30 +120,65 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      <div style={{marginTop:12}} className="card">
-        <table style={{width:'100%', borderCollapse:'collapse'}}>
-          <thead>
-            <tr>
-              <th style={{textAlign:'left', padding:'8px 6px'}}>Nome</th>
-              <th style={{textAlign:'left', padding:'8px 6px'}}>Approval</th>
-              <th style={{textAlign:'left', padding:'8px 6px'}}>Recursos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(p => (
-              <tr key={p.name} style={{borderTop:'1px solid var(--border)'}}>
-                <td style={{padding:'8px 6px'}}>
-                  <div style={{fontWeight:600}}>{p.displayName || p.name}</div>
-                  <div className="small" style={{opacity:.8}}>{p.name}</div>
-                  {p.description && <div className="small" style={{opacity:.8}}>{p.description}</div>}
-                </td>
-                <td style={{padding:'8px 6px'}}>{p.approvalType || '-'}</td>
-                <td style={{padding:'8px 6px'}}>{(p.apiResources||[]).slice(0,3).join(', ')}{(p.apiResources||[]).length>3?'…':''}</td>
+      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(320px, 42%)', gap:12, marginTop:12}}>
+        <div className="card" style={{minWidth:0}}>
+          <table style={{width:'100%', borderCollapse:'collapse'}}>
+            <thead>
+              <tr>
+                <th style={{textAlign:'left', padding:'8px 6px'}}>Nome</th>
+                <th style={{textAlign:'left', padding:'8px 6px'}}>Approval</th>
               </tr>
-            ))}
-            {filtered.length===0 && <tr><td colSpan={3} style={{padding:'12px 8px', opacity:.7}}>Nenhum product</td></tr>}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map(p => (
+                <tr key={p.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}} onClick={()=>openDetail(p)}>
+                  <td style={{padding:'8px 6px'}}>
+                    <div style={{fontWeight:600}}>{p.displayName || p.name}</div>
+                    <div className="small" style={{opacity:.8}}>{p.name}</div>
+                    {p.description && <div className="small" style={{opacity:.8}}>{p.description}</div>}
+                  </td>
+                  <td style={{padding:'8px 6px'}}>{p.approvalType || '-'}</td>
+                </tr>
+              ))}
+              {filtered.length===0 && <tr><td colSpan={2} style={{padding:'12px 8px', opacity:.7}}>Nenhum product</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card" style={{minWidth:0}}>
+          <h3 style={{marginTop:0}}>Detalhes do product</h3>
+          {!detail && <div className="small" style={{opacity:.8}}>Clique em um product para ver/editar recursos.</div>}
+          {detail && (
+            <div style={{display:'grid', gap:10}}>
+              <div><b>Nome:</b> {detail.displayName || detail.name}</div>
+              <div className="small" style={{opacity:.8}}><b>ID:</b> {detail.name}</div>
+              {detail.description && <div><b>Descrição:</b> {detail.description}</div>}
+              <div><b>Approval:</b> {detail.approvalType || '-'}</div>
+
+              <div>
+                <b>Recursos (apiResources)</b>
+                <ul style={{margin:'6px 0 8px', paddingLeft:16}}>
+                  {(resources || []).map((r, i)=>(
+                    <li key={i} style={{display:'flex', alignItems:'center', gap:8}}>
+                      <code style={{fontSize:12}}>{r}</code>
+                      <button onClick={()=> setResources(prev => prev.filter((_, idx)=> idx!==i))}>remover</button>
+                    </li>
+                  ))}
+                  {(resources || []).length===0 && <li className="small" style={{opacity:.7}}>Nenhum recurso</li>}
+                </ul>
+                <div style={{display:'flex', gap:8}}>
+                  <input value={newRes} onChange={e=>setNewRes(e.target.value)} placeholder="/v1/** ou /minha-api/**" style={{flex:1}} />
+                  <button onClick={()=>{ if(newRes.trim()){ setResources(prev=>[...prev, newRes.trim()]); setNewRes(""); }}}>incluir</button>
+                </div>
+              </div>
+
+              <div style={{display:'flex', gap:8}}>
+                <button onClick={saveResources} disabled={saving}>Salvar alterações</button>
+                <button onClick={()=>{ if(selected) openDetail(selected); }}>Descartar</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );
