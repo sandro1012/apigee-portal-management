@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState } from 'react';
-import styles from './page.module.css';
 
 type Credential = {
   consumerKey: string;
@@ -134,39 +133,35 @@ export default function AppsPage() {
           </table>
         </div>
 
-        <div className="card" style={{minWidth:0}}>
+        <div className="card">
           <h3 style={{marginTop:0}}>Detalhes do App</h3>
           {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
           {selected && (
-            <div className={styles.detail}>
+            <div style={{display:'grid', gap:8}}>
               <div><b>Nome:</b> {selected.name}</div>
               {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
               {selected.status && <div><b>Status:</b> {selected.status}</div>}
-              {selected.appId && <div><b>App ID:</b> <code>{selected.appId}</code></div>}
-
               {selected.attributes && selected.attributes.length>0 && (
                 <div>
                   <b>Atributos</b>
                   <ul>{selected.attributes.map((at,i)=>(<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
                 </div>
               )}
-
               {selected.apiProducts && selected.apiProducts.length>0 && (
                 <div>
                   <b>Products associados</b>
                   <ul>{selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}</ul>
                 </div>
               )}
-
               {selected.credentials && selected.credentials.length>0 && (
                 <div>
                   <b>Credenciais</b>
                   <ul>
                     {selected.credentials.map((c,i)=>(
                       <li key={i} style={{marginBottom:6}}>
-                        <div><b>Key:</b> <code>{c.consumerKey}</code></div>
-                        {c.consumerSecret && <div className="small" style={{opacity:.9}}><b>Secret:</b> <code>{c.consumerSecret}</code></div>}
-                        {c.status && <div className="small"><b>Status:</b> {c.status}</div>}
+                        <div><code>Key:</code> {c.consumerKey}</div>
+                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
                         {c.apiProducts && c.apiProducts.length>0 && (
                           <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
                         )}
