@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import styles from './page.module.css';
 
 type Credential = {
   consumerKey: string;
@@ -108,8 +109,8 @@ export default function AppsPage() {
         </div>
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(340px, 40%)', gap:12, marginTop:12}}>
-        <div className="card" style={{minWidth:0}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(280px, 36%)', gap:12, marginTop:12}}>
+        <div className="card">
           <table style={{width:'100%', borderCollapse:'collapse'}}>
             <thead>
               <tr>
@@ -123,7 +124,7 @@ export default function AppsPage() {
                     onClick={()=> a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
                   <td style={{padding:'8px 6px'}}>
                     <div style={{fontWeight:600}}>{a.name}</div>
-                    <div className="small mono weak" style={{opacity:.85}}>{a.appId}</div>
+                    <div className="small" style={{opacity:.8}}>{a.appId}</div>
                   </td>
                   <td style={{padding:'8px 6px'}}>{a.status || '-'}</td>
                 </tr>
@@ -137,41 +138,37 @@ export default function AppsPage() {
           <h3 style={{marginTop:0}}>Detalhes do App</h3>
           {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
           {selected && (
-            <div className="kv">
-              <div className="kv-row"><div className="kv-label">Nome</div><div className="kv-value">{selected.name}</div></div>
-              {selected.developerEmail && <div className="kv-row"><div className="kv-label">Developer</div><div className="kv-value">{selected.developerEmail}</div></div>}
-              {selected.status && <div className="kv-row"><div className="kv-label">Status</div><div className="kv-value">{selected.status}</div></div>}
-              {selected.appId && <div className="kv-row"><div className="kv-label">App ID</div><div className="kv-value mono">{selected.appId}</div></div>}
+            <div className={styles.detail}>
+              <div><b>Nome:</b> {selected.name}</div>
+              {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
+              {selected.status && <div><b>Status:</b> {selected.status}</div>}
+              {selected.appId && <div><b>App ID:</b> <code>{selected.appId}</code></div>}
 
               {selected.attributes && selected.attributes.length>0 && (
-                <div className="kv-block">
-                  <div className="kv-title">Atributos</div>
-                  <ul className="kv-list">
-                    {selected.attributes.map((at,i)=>(<li key={i}><span className="mono weak">{at.name}</span>: {at.value}</li>))}
-                  </ul>
+                <div>
+                  <b>Atributos</b>
+                  <ul>{selected.attributes.map((at,i)=>(<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
                 </div>
               )}
 
               {selected.apiProducts && selected.apiProducts.length>0 && (
-                <div className="kv-block">
-                  <div className="kv-title">Products associados</div>
-                  <ul className="kv-list">
-                    {selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}
-                  </ul>
+                <div>
+                  <b>Products associados</b>
+                  <ul>{selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}</ul>
                 </div>
               )}
 
               {selected.credentials && selected.credentials.length>0 && (
-                <div className="kv-block">
-                  <div className="kv-title">Credenciais</div>
-                  <ul className="kv-list">
+                <div>
+                  <b>Credenciais</b>
+                  <ul>
                     {selected.credentials.map((c,i)=>(
-                      <li key={i} className="kv-cred">
-                        <div className="kv-row"><div className="kv-label">Key</div><div className="kv-value mono">{c.consumerKey}</div></div>
-                        {c.consumerSecret && <div className="kv-row"><div className="kv-label">Secret</div><div className="kv-value mono">{c.consumerSecret}</div></div>}
-                        {c.status && <div className="kv-row"><div className="kv-label">Status</div><div className="kv-value">{c.status}</div></div>}
+                      <li key={i} style={{marginBottom:6}}>
+                        <div><b>Key:</b> <code>{c.consumerKey}</code></div>
+                        {c.consumerSecret && <div className="small" style={{opacity:.9}}><b>Secret:</b> <code>{c.consumerSecret}</code></div>}
+                        {c.status && <div className="small"><b>Status:</b> {c.status}</div>}
                         {c.apiProducts && c.apiProducts.length>0 && (
-                          <div className="kv-row"><div className="kv-label">Products</div><div className="kv-value">{c.apiProducts.map(p=>p.apiproduct).join(', ')}</div></div>
+                          <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
                         )}
                       </li>
                     ))}

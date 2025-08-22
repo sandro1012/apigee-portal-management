@@ -1,0 +1,21 @@
+.detail {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  min-width: 0;
+}
+.detail code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.detail ul {
+  font-size: 13px;
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
