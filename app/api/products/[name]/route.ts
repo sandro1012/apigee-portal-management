@@ -1,15 +1,13 @@
 import { cookies } from "next/headers";
-import { requireSession } from "../../../../../lib/auth";
 
 async function getBearer(): Promise<string> {
   const c = cookies().get("gcp_token")?.value;
   if (c) return c;
   if (process.env.GCP_USER_TOKEN) return process.env.GCP_USER_TOKEN as string;
-  throw new Error("Token Google não encontrado (salve via /api/auth/token ou configure GCP_USER_TOKEN).");
+  throw new Error("Token Google não encontrado (salve via /ui/select ou configure GCP_USER_TOKEN).");
 }
 
 export async function GET(req: Request, ctx: { params: { name: string } }) {
-  try { requireSession(); } catch { return new Response(JSON.stringify({error:"unauthorized"}), {status:401}); }
   try {
     const { searchParams } = new URL(req.url);
     const org = searchParams.get("org");
