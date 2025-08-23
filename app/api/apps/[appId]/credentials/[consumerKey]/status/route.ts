@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: { appId: string, 
 
     const url = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/developers/${encodeURIComponent(developerEmail)}/apps/${encodeURIComponent(appName)}/keys/${encodeURIComponent(params.consumerKey)}?action=${encodeURIComponent(action)}`;
 
-    const r = await fetch(url, { method: "POST", headers });
+    const r = await fetch(url, { method: "POST", headers: { ...headers, "Content-Type": "application/octet-stream" } });
     const text = await r.text();
     if (!r.ok) return new NextResponse(text || JSON.stringify({ error: "status change failed" }), { status: r.status });
 
