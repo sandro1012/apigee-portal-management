@@ -13,7 +13,6 @@ export async function POST(req: Request, { params }: { params: { name: string } 
     if (!org) return new Response(JSON.stringify({ error: "missing org" }), { status: 400 });
     const name = params.name;
 
-    // Body esperado: { operationConfigs: [...] } OU { operationGroup: { operationConfigs: [...] } }
     const raw = await req.json().catch(() => ({}));
     const groupInput = raw?.operationGroup ? raw.operationGroup : { operationConfigs: raw?.operationConfigs };
     const parsed = operationGroupSchema.safeParse(groupInput);
@@ -21,7 +20,6 @@ export async function POST(req: Request, { params }: { params: { name: string } 
       return new Response(JSON.stringify({ error: "invalid payload", issues: parsed.error.flatten() }, null, 2), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    // GET atual para preservar campos
     const getUrl = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts/${encodeURIComponent(name)}`;
     const currentRes = await fetch(getUrl, { headers: { Authorization: bearer } });
     const current = await currentRes.json().catch(() => ({}));
@@ -29,17 +27,14 @@ export async function POST(req: Request, { params }: { params: { name: string } 
       return new Response(JSON.stringify({ error: current.error || current.message || "failed to fetch product" }), { status: currentRes.status });
     }
 
-    // Monta PUT body com campos permitidos + operationGroup novo
     const putBody: any = {};
     for (const k of Object.keys(current)) {
       if (ALLOWED_KEYS.has(k)) putBody[k] = current[k];
     }
-    // substitui por operationGroup validado e remove apiResources se houver
     putBody.operationGroup = parsed.data;
     if ("apiResources" in putBody) delete putBody.apiResources;
 
-    const putUrl = getUrl;
-    const pr = await fetch(putUrl, {
+    const pr = await fetch(getUrl, {
       method: "PUT",
       headers: { Authorization: bearer, "Content-Type": "application/json" },
       body: JSON.stringify(putBody),

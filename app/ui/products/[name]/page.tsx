@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { OperationConfig, OperationGroupPayload, HttpMethod } from "../../../../lib/schema/product";
-import { operationGroupSchema } from "../../../../lib/schema/product";
+import type { OperationConfig, OperationGroupPayload, HttpMethod } from "../../../lib/schema/product";
+import { operationGroupSchema } from "../../../lib/schema/product";
 
 const METHODS: HttpMethod[] = ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS","TRACE"];
 
@@ -12,7 +12,6 @@ type ApigeeProduct = {
   description?: string;
   environments?: string[];
   operationGroup?: { operationConfigs?: OperationConfig[] };
-  // outros campos ignorados para UI
 };
 
 export default function ProductDetailPage({ params }: { params: { name: string } }) {
@@ -23,7 +22,6 @@ export default function ProductDetailPage({ params }: { params: { name: string }
   const [product, setProduct] = useState<ApigeeProduct | null>(null);
   const [configs, setConfigs] = useState<OperationConfig[]>([]);
 
-  // load product
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -80,7 +78,6 @@ export default function ProductDetailPage({ params }: { params: { name: string }
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j?.error) throw new Error(j?.error || "Falha ao atualizar product");
-      // atualiza tela
       alert("Atualizado com sucesso!");
     } catch (e: any) {
       setError(e.message || "Erro ao salvar");
@@ -149,7 +146,7 @@ export default function ProductDetailPage({ params }: { params: { name: string }
   }
 
   if (loading) return <div className="p-6">Carregando…</div>;
-  if (error) return <div className="p-6 text-red-600">Erro: {error}</div>;
+  if (error) return <div className="p-6 text-red-600 whitespace-pre-line">Erro: {error}</div>;
   if (!product) return <div className="p-6">Produto não encontrado.</div>;
 
   return (
@@ -229,7 +226,7 @@ export default function ProductDetailPage({ params }: { params: { name: string }
         <button onClick={onSave} disabled={saving} className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50">
           {saving ? "Salvando..." : "Salvar alterações"}
         </button>
-        {error ? <span className="text-red-600 text-sm">{error}</span> : null}
+        {error ? <span className="text-red-600 text-sm whitespace-pre-line">{error}</span> : null}
       </div>
     </div>
   );
