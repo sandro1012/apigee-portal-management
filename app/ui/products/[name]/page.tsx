@@ -29,18 +29,23 @@ export default function ProductDetailPage({ params }: { params: { name: string }
       setError(null);
       try {
         const r = await fetch(`/api/products/${encodeURIComponent(productName)}`, { cache: "no-store" });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || "Falha ao obter produto");
+        const j = await r.json().catch(() => ({}));
         if (cancel) return;
-        const p: ApigeeProduct = j.product;
-        setProduct(p);
-        const current = p?.operationGroup?.operationConfigs || [];
-        setConfigs(current.length ? current : [{
-          apiSource: "",
-          operations: [{ resource: "/", methods: [] }],
-          quota: { limit: "", interval: "", timeUnit: "" },
-          attributes: [],
-        }]);
+        if (j?.error) {
+          setError(j.error);
+          setProduct(null);
+          setConfigs([]);
+        } else {
+          const p: ApigeeProduct = j.product;
+          setProduct(p);
+          const current = p?.operationGroup?.operationConfigs || [];
+          setConfigs(current.length ? current : [{
+            apiSource: "",
+            operations: [{ resource: "/", methods: [] }],
+            quota: { limit: "", interval: "", timeUnit: "" },
+            attributes: [],
+          }]);
+        }
       } catch (e: any) {
         if (!cancel) setError(e.message || "Erro");
       } finally {
