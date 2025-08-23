@@ -1,28 +1,20 @@
-import { cookies } from "next/headers";
+import { getBearer, getOrg } from "../../../lib/auth";
 
-async function getBearer(): Promise<string> {
-  const c = cookies().get("gcp_token")?.value;
-  if (c) return c;
-  if (process.env.GCP_USER_TOKEN) return process.env.GCP_USER_TOKEN as string;
-  throw new Error("Token Google não encontrado (salve via /ui/select ou configure GCP_USER_TOKEN).");
-}
-
-export async function GET(req: Request, ctx: { params: { name: string } }) {
+export async function GET(_req: Request, { params }: { params: { name: string } }) {
   try {
-    const { searchParams } = new URL(req.url);
-    const org = searchParams.get("org");
-    if (!org) return new Response(JSON.stringify({error:"org obrigatório"}), {status:400});
-    const name = ctx.params.name;
+    const bearer = getBearer();
+    const org = getOrg();
+    if (!bearer) return new Response(JSON.stringify({ error: "missing token" }), { status: 401 });
+    if (!org) return new Response(JSON.stringify({ error: "missing org" }), { status: 400 });
+    const name = params.name;
 
-    const token = await getBearer();
     const url = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts/${encodeURIComponent(name)}`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const j = await r.json();
-    if (!r.ok) {
-      return new Response(JSON.stringify({error: j.error?.message || r.statusText}), {status:r.status});
-    }
-    return Response.json(j);
-  } catch (e:any) {
-    return new Response(JSON.stringify({error: e.message || String(e)}), {status:500});
+    const r = await fetch(url, { headers: { Authorization: bearer } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return new Response(JSON.stringify({ error: j.error || j.message || r.statusText }), { status: r.status });
+
+    return new Response(JSON.stringify({ product: j }, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message || "internal error" }), { status: 500 });
   }
 }
