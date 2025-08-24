@@ -1,13 +1,7 @@
 "use client";
-
 import React, { useEffect, useState } from "react";
 
-type Props = {
-  appId: string;
-  appName: string;
-  org: string;
-  onCreated?: () => void;
-};
+type Props = { appId: string; appName: string; org: string; onCreated?: () => void; };
 
 export default function NewCredentialDrawer({ appId, appName, org, onCreated }: Props) {
   const [open, setOpen] = useState(false);
@@ -71,8 +65,8 @@ export default function NewCredentialDrawer({ appId, appName, org, onCreated }: 
               <div>
                 <div className="text-xs text-zinc-500 mb-1">API Products</div>
                 <select multiple className="w-full border rounded p-2 h-40"
-                  value={selected}
-                  onChange={e => setSelected(Array.from(e.target.selectedOptions).map(o => o.value))}>
+                        value={selected}
+                        onChange={e => setSelected(Array.from(e.target.selectedOptions).map(o => o.value))}>
                   {products.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>

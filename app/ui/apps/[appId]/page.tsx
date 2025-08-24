@@ -25,9 +25,10 @@ async function fetchJson(url: string, init?: RequestInit) {
 }
 
 export default function AppDetailPage() {
-  const params = useParams<{ appId: string }>();
+  const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
+
   const [app, setApp] = useState<DevApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
@@ -35,13 +36,12 @@ export default function AppDetailPage() {
   const [createSel, setCreateSel] = useState<string[]>([]);
   const [expiresIn, setExpiresIn] = useState<string>("");
 
-  const appId = params.appId as string;
-
   useEffect(() => {
     const run = async () => {
+      if (!org) return;
+      setLoading(true);
+      setError("");
       try {
-        setLoading(true);
-        setError("");
         const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
         setApp(detail);
         const pr = await fetchJson(`/api/products?org=${encodeURIComponent(org)}`);
@@ -52,7 +52,7 @@ export default function AppDetailPage() {
         setLoading(false);
       }
     };
-    if (org) run();
+    run();
   }, [appId, org]);
 
   const refresh = async () => {
@@ -61,14 +61,11 @@ export default function AppDetailPage() {
   };
 
   async function createCredential() {
-    if (createSel.length === 0) {
-      alert("Selecione ao menos 1 API Product");
-      return;
-    }
+    if (createSel.length === 0) return alert("Selecione ao menos 1 API Product");
     const body: any = { apiProducts: createSel };
     if (expiresIn) {
-      const num = Number(expiresIn);
-      if (!Number.isNaN(num)) body.keyExpiresIn = num;
+      const n = Number(expiresIn);
+      if (!Number.isNaN(n)) body.keyExpiresIn = n;
     }
     await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials?org=${encodeURIComponent(org)}`, {
       method: "POST",
@@ -107,7 +104,7 @@ export default function AppDetailPage() {
 
   async function removeProduct(key: string, product: string) {
     await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}?org=${encodeURIComponent(org)}`, {
-      method: "DELETE"
+      method: "DELETE",
     });
     await refresh();
   }
@@ -115,8 +112,10 @@ export default function AppDetailPage() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Detalhes do App</h1>
+      {!org && <div className="text-sm text-zinc-600">Defina a <strong>org</strong> via URL (?org=...) para carregar.</div>}
       {loading && <div>Carregando...</div>}
       {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
+
       {app && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
