@@ -1,11 +1,13 @@
+import { NextResponse } from "next/server";
+import { readBearer } from "../../../../../lib/util/bearer";
 
-import { gcpAccessToken } from "../../../../lib/apigee";
-import { requireSession } from "../../../../lib/auth";
-
-export async function GET() {
-  try { requireSession(); } catch { return new Response(JSON.stringify({ ok:false, error:'unauthorized' }), {status:401}); }
+export async function GET(req: Request) {
   try {
-    const t = await gcpAccessToken();
-    return Response.json({ ok:true, tokenPreview: t?.slice(0,12)+"..." });
-  } catch (e:any) { return new Response(JSON.stringify({ ok:false, error: e.message || String(e) }), {status:500}); }
+    const b = readBearer(req);
+    // não retorna o token inteiro por segurança
+    const masked = b.replace(/Bearer\s+([\w-]{4})[\w.-]+([\w-]{4})/, "Bearer $1...$2");
+    return NextResponse.json({ ok: true, authorizationHeaderPreview: masked });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 401 });
+  }
 }
