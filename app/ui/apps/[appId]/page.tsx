@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams, useParams } from "next/navigation";
 
 type Credential = {
@@ -28,10 +28,11 @@ export default function AppDetailPage() {
   const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
+
   const [app, setApp] = useState<DevApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
-  const [allProducts, setAllProducts] = useState<string[]>([]);
+  const [products, setProducts] = useState<string[]>([]);
   const [createSel, setCreateSel] = useState<string[]>([]);
   const [expiresIn, setExpiresIn] = useState<string>("");
 
@@ -40,21 +41,21 @@ export default function AppDetailPage() {
       setLoading(true);
       setError("");
       try {
-        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
+        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}${org ? `?org=${encodeURIComponent(org)}` : ""}`);
         setApp(detail);
-        const pr = await fetchJson(`/api/products?org=${encodeURIComponent(org)}`);
-        setAllProducts(pr?.apiProduct || pr?.names || []);
+        const pr = await fetchJson(`/api/products${org ? `?org=${encodeURIComponent(org)}` : ""}`);
+        setProducts(pr?.apiProduct || pr?.names || []);
       } catch (e: any) {
         setError(e.message || String(e));
       } finally {
         setLoading(false);
       }
     };
-    if (org) run();
+    run();
   }, [appId, org]);
 
   const refresh = async () => {
-    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
+    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}${org ? `?org=${encodeURIComponent(org)}` : ""}`);
     setApp(detail);
   };
 
@@ -62,10 +63,10 @@ export default function AppDetailPage() {
     if (createSel.length === 0) return alert("Selecione ao menos 1 API Product");
     const body: any = { apiProducts: createSel };
     if (expiresIn) {
-      const num = Number(expiresIn);
-      if (!Number.isNaN(num)) body.keyExpiresIn = num;
+      const n = Number(expiresIn);
+      if (!Number.isNaN(n)) body.keyExpiresIn = n;
     }
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials?org=${encodeURIComponent(org)}`, {
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -75,7 +76,7 @@ export default function AppDetailPage() {
   }
 
   async function setStatus(key: string, action: "approve"|"revoke") {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/status?org=${encodeURIComponent(org)}`, {
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/status${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action }),
@@ -85,12 +86,14 @@ export default function AppDetailPage() {
 
   async function deleteKey(key: string) {
     if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`, { method: "DELETE" });
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
+      method: "DELETE",
+    });
     await refresh();
   }
 
   async function addProduct(key: string, product: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/add?org=${encodeURIComponent(org)}`, {
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/add${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiProduct: product }),
@@ -99,8 +102,8 @@ export default function AppDetailPage() {
   }
 
   async function removeProduct(key: string, product: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}?org=${encodeURIComponent(org)}`, {
-      method: "DELETE"
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
+      method: "DELETE",
     });
     await refresh();
   }
@@ -110,6 +113,7 @@ export default function AppDetailPage() {
       <h1 className="text-2xl font-bold">Detalhes do App</h1>
       {loading && <div>Carregando...</div>}
       {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
+
       {app && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -134,7 +138,7 @@ export default function AppDetailPage() {
                 const opts = Array.from(e.target.selectedOptions).map(o => o.value);
                 setCreateSel(opts);
               }} className="border rounded p-2 min-w-[240px] h-32">
-                {allProducts.map(p => <option key={p} value={p}>{p}</option>)}
+                {products.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <input className="border rounded p-2" placeholder="keyExpiresIn (ms) opcional" value={expiresIn} onChange={e=>setExpiresIn(e.target.value)} />
               <button className="px-3 py-2 rounded bg-black text-white" onClick={createCredential}>Criar</button>
@@ -145,7 +149,7 @@ export default function AppDetailPage() {
             <h2 className="text-lg font-semibold mb-3">Credenciais</h2>
             <div className="space-y-4">
               {(app.credentials || []).map((c) => {
-                const notAssoc = allProducts.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
+                const notAssoc = products.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
                 return (
                   <div key={c.consumerKey} className="border rounded-xl p-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
