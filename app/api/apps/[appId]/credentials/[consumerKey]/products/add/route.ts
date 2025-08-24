@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { resolveDevAndApp } from "../../../../../../../lib/util/resolveApp";
+import { resolveDevAndApp } from "../../../../../../../../../lib/util/resolveApp";
 
-// Adds a single API Product to a Key using updateDeveloperAppKey
 export async function POST(req: Request, { params }: { params: { appId: string, consumerKey: string } }) {
   try {
     const { apiProduct } = await req.json();
@@ -13,7 +12,7 @@ export async function POST(req: Request, { params }: { params: { appId: string, 
 
     const url = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/developers/${encodeURIComponent(developerEmail)}/apps/${encodeURIComponent(appName)}/keys/${encodeURIComponent(params.consumerKey)}`;
 
-    const body = { apiProducts: [apiProduct] }; // updateDeveloperAppKey "adds" the product
+    const body = { apiProducts: [apiProduct] };
     const r = await fetch(url, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const text = await r.text();
     if (!r.ok) return new NextResponse(text || JSON.stringify({ error: "falha ao adicionar product" }), { status: r.status });

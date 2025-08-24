@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { resolveDevAndApp } from "../../../../../../../lib/util/resolveApp";
+import { resolveDevAndApp } from "../../../../../../../../../lib/util/resolveApp";
 
-// Removes an API Product association from a Key
 export async function DELETE(req: Request, { params }: { params: { appId: string, consumerKey: string, product: string } }) {
   try {
     const { org, appName, developerEmail, headers } = await resolveDevAndApp(req, params.appId);
