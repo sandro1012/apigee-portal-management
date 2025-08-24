@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { readBearer } from "../../../../../lib/util/bearer";
+import { readBearer } from "../../../../lib/util/bearer";
 
 export async function GET(req: Request) {
   try {
     const b = readBearer(req);
-    // não retorna o token inteiro por segurança
+    // mascara o token no preview
     const masked = b.replace(/Bearer\s+([\w-]{4})[\w.-]+([\w-]{4})/, "Bearer $1...$2");
     return NextResponse.json({ ok: true, authorizationHeaderPreview: masked });
   } catch (e: any) {
