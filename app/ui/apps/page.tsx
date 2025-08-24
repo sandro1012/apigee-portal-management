@@ -1,196 +1,103 @@
-'use client';
-import { useEffect, useMemo, useState } from 'react';
+"use client";
+import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import NewCredentialDrawer from "./components/NewCredentialDrawer";
 
-type Credential = {
-  consumerKey: string;
-  consumerSecret?: string;
-  status?: string;
-  apiProducts?: { apiproduct: string; status: string }[];
-};
-type AppItem = {
-  appId: string;
-  name: string;
-  developerId?: string;
-  developerEmail?: string;
-  status?: string;
-  createdAt?: string;
-  lastModifiedAt?: string;
-};
-type AppDetail = AppItem & {
-  credentials?: Credential[];
-  apiProducts?: string[];
-  attributes?: { name: string; value: string }[];
-};
+type DevAppLite = { name: string; appId: string; developerId?: string; developerEmail?: string };
+
+async function fetchJson(url: string, init?: RequestInit) {
+  const r = await fetch(url, init);
+  if (!r.ok) throw new Error(await r.text());
+  return await r.json();
+}
 
 export default function AppsPage() {
-  const [orgs, setOrgs] = useState<string[]>([]);
-  const [org, setOrg] = useState<string>("");
-  const [envs, setEnvs] = useState<string[]>([]);
-  const [env, setEnv] = useState<string>("");
-  const [items, setItems] = useState<AppItem[]>([]);
-  const [q, setQ] = useState("");
-  const [selected, setSelected] = useState<AppDetail|null>(null);
-  const [tokenInput, setTokenInput] = useState("");
-  const [tokenMsg, setTokenMsg] = useState("");
+  const search = useSearchParams();
+  const router = useRouter();
+  const org = search.get("org") || "";
+  const [apps, setApps] = useState<DevAppLite[]>([]);
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
 
-  const [pageSize, setPageSize] = useState<number>(10);
-  const [page, setPage] = useState<number>(1);
+  const start = (page-1) * pageSize;
+  const end = start + pageSize;
+  const pageItems = apps.slice(start, end);
+  const totalPages = Math.max(1, Math.ceil(apps.length / pageSize));
 
-  useEffect(() => { fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
-    if (!org) return;
-    setEnv(""); setEnvs([]);
-    fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
+    const run = async () => {
+      if (!org) return;
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetchJson(`/api/apps?org=${encodeURIComponent(org)}`);
+        // espera campo apps ou lista direta
+        const list: DevAppLite[] = res.apps || res || [];
+        setApps(list);
+      } catch (e: any) {
+        setError(e.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
   }, [org]);
 
-  async function saveToken() {
-    setTokenMsg("");
-    const res = await fetch('/api/auth/token', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token: tokenInput.trim() }) });
-    const j = await res.json().catch(()=>({}));
-    if (res.ok) setTokenMsg("Token salvo (expira ~1h)."); else setTokenMsg("Falha: " + (j.error || res.statusText));
-  }
-  async function clearToken() { await fetch('/api/auth/token', { method: 'DELETE' }); setTokenMsg("Token limpo."); }
-
-  async function loadApps() {
-    if (!org) return;
-    const res = await fetch('/api/apps', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ org }) });
-    const j = await res.json();
-    if (!res.ok) { alert(j.error || "Erro ao listar apps"); return; }
-    setItems(Array.isArray(j) ? j : []);
-    setSelected(null);
-    setPage(1);
-  }
-
-  async function openAppById(appId: string) {
-    if (!org) return;
-    const res = await fetch(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
-    const j = await res.json();
-    if (!res.ok) { alert(j.error || "Erro ao carregar app"); return; }
-    setSelected(j);
-  }
-
-  const filtered = useMemo(() => {
-    const t = q.toLowerCase();
-    return items.filter(a => (`${a.name} ${a.appId||''}`).toLowerCase().includes(t));
-  }, [items, q]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageItems = filtered.slice((page-1)*pageSize, (page)*pageSize);
-
   return (
-    <main>
-      <h2>Apps</h2>
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-bold">Apps</h1>
 
-      <div className="card" style={{display:'grid', gap:8, marginBottom:12, maxWidth:760}}>
-        <strong>Token Google (OAuth)</strong>
-        <input type="password" placeholder="ya29..." value={tokenInput} onChange={e=>setTokenInput(e.target.value)} />
-        <div style={{display:'flex', gap:8}}>
-          <button onClick={saveToken} disabled={!tokenInput.trim()}>Salvar token</button>
-          <button onClick={clearToken}>Limpar token</button>
-          {tokenMsg && <small>{tokenMsg}</small>}
-        </div>
-        <small>Sem token salvo: backend tenta <code>GCP_USER_TOKEN</code> (env) ou Service Account.</small>
-      </div>
-
-      <div className="card" style={{display:'grid', gap:8, maxWidth:760}}>
-        <label>Org
-          <select value={org} onChange={e=>setOrg(e.target.value)}>
-            <option value="">Selecione...</option>
-            {orgs.map(o=>(<option key={o} value={o}>{o}</option>))}
+      <div className="flex items-center gap-3">
+        <div className="text-sm">Org atual:</div>
+        <div className="font-mono text-sm">{org || "(defina org)"}</div>
+        <div className="ml-auto flex items-center gap-2">
+          <label className="text-sm">Mostrar</label>
+          <select
+            className="border rounded p-1 text-sm"
+            value={pageSize}
+            onChange={(e)=>{ setPage(1); setPageSize(Number(e.target.value)); }}>
+            <option value={10}>10</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
           </select>
-        </label>
-        <label>Env (contexto)
-          <select value={env} onChange={e=>setEnv(e.target.value)}>
-            <option value="">Selecione...</option>
-            {envs.map(x=>(<option key={x} value={x}>{x}</option>))}
-          </select>
-        </label>
-        <div style={{display:'flex', gap:8, alignItems:'center'}}>
-          <button onClick={loadApps} disabled={!org}>Listar apps</button>
-          <input placeholder="filtrar..." value={q} onChange={e=>setQ(e.target.value)} style={{flex:1}} />
-          <label className="small" style={{display:'flex', alignItems:'center', gap:6}}>
-            por página:
-            <select value={pageSize} onChange={e=>{ setPageSize(parseInt(e.target.value || '10')); setPage(1); }}>
-              <option value={10}>10</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-          </label>
+          <span className="text-sm">por página</span>
         </div>
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(280px, 36%)', gap:12, marginTop:12}}>
-        <div className="card">
-          <table style={{width:'100%', borderCollapse:'collapse'}}>
-            <thead>
-              <tr>
-                <th style={{textAlign:'left', padding:'8px 6px'}}>App</th>
-                <th style={{textAlign:'left', padding:'8px 6px'}}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map(a => (
-                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}}
-                    onClick={()=> a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
-                  <td style={{padding:'8px 6px'}}>
-                    <div style={{fontWeight:600}}>{a.name}</div>
-                    <div className="small" style={{opacity:.8}}>{a.appId}</div>
-                  </td>
-                  <td style={{padding:'8px 6px'}}>{a.status || '-'}</td>
-                </tr>
-              ))}
-              {pageItems.length===0 && <tr><td colSpan={2} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
-            </tbody>
-          </table>
+      {loading && <div>Carregando...</div>}
+      {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
 
-          <div style={{display:'flex', gap:8, alignItems:'center', justifyContent:'flex-end', marginTop:8}}>
-            <button onClick={()=> setPage(p=> Math.max(1, p-1))} disabled={page<=1}>Anterior</button>
-            <span className="small">Página {page} de {totalPages}</span>
-            <button onClick={()=> setPage(p=> Math.min(totalPages, p+1))} disabled={page>=totalPages}>Próxima</button>
-          </div>
-        </div>
-
-        <div className="card">
-          <h3 style={{marginTop:0}}>Detalhes do App</h3>
-          {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
-          {selected && (
-            <div style={{display:'grid', gap:8}}>
-              <div><b>Nome:</b> {selected.name}</div>
-              {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
-              {selected.status && <div><b>Status:</b> {selected.status}</div>}
-              {selected.attributes && selected.attributes.length>0 && (
-                <div>
-                  <b>Atributos</b>
-                  <ul>{selected.attributes.map((at,i)=>(<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
-                </div>
-              )}
-              {selected.apiProducts && selected.apiProducts.length>0 && (
-                <div>
-                  <b>Products associados</b>
-                  <ul>{selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}</ul>
-                </div>
-              )}
-              {selected.credentials && selected.credentials.length>0 && (
-                <div>
-                  <b>Credenciais</b>
-                  <ul>
-                    {selected.credentials.map((c,i)=>(
-                      <li key={i} style={{marginBottom:6}}>
-                        <div><code>Key:</code> {c.consumerKey}</div>
-                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
-                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
-                        {c.apiProducts && c.apiProducts.length>0 && (
-                          <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+      <div className="divide-y rounded-2xl border overflow-hidden">
+        {pageItems.map((app) => (
+          <div key={app.appId} className="p-3 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="font-mono truncate">{app.name}</div>
+              <div className="text-xs text-zinc-500 break-all">{app.appId}</div>
             </div>
-          )}
-        </div>
+            <NewCredentialDrawer
+              appId={app.appId}
+              appName={app.name}
+              org={org}
+              onCreated={()=>{/* noop; você pode forçar refresh se quiser */}}
+            />
+            <button
+              className="px-3 py-1 rounded bg-black text-white"
+              onClick={()=>router.push(`/ui/apps/${encodeURIComponent(app.appId)}?org=${encodeURIComponent(org)}`)}>
+              Detalhes
+            </button>
+          </div>
+        ))}
       </div>
-    </main>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button className="px-2 py-1 border rounded" disabled={page<=1} onClick={()=>setPage(p => Math.max(1, p-1))}>Anterior</button>
+          <div className="text-sm">Página {page} / {totalPages}</div>
+          <button className="px-2 py-1 border rounded" disabled={page>=totalPages} onClick={()=>setPage(p => Math.min(totalPages, p+1))}>Próxima</button>
+        </div>
+      )}
+    </div>
   );
 }

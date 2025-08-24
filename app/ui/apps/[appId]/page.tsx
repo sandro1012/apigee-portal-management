@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams, useParams } from "next/navigation";
 
 type Credential = {
@@ -25,25 +25,27 @@ async function fetchJson(url: string, init?: RequestInit) {
 }
 
 export default function AppDetailPage() {
-  const { appId } = useParams<{ appId: string }>();
+  const params = useParams<{ appId: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
   const [app, setApp] = useState<DevApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
-  const [allProducts, setAllProducts] = useState<string[]>([]);
+  const [products, setProducts] = useState<string[]>([]);
   const [createSel, setCreateSel] = useState<string[]>([]);
   const [expiresIn, setExpiresIn] = useState<string>("");
 
+  const appId = params.appId as string;
+
   useEffect(() => {
     const run = async () => {
-      setLoading(true);
-      setError("");
       try {
+        setLoading(true);
+        setError("");
         const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
         setApp(detail);
         const pr = await fetchJson(`/api/products?org=${encodeURIComponent(org)}`);
-        setAllProducts(pr?.apiProduct || pr?.names || []);
+        setProducts(pr?.apiProduct || pr?.names || []);
       } catch (e: any) {
         setError(e.message || String(e));
       } finally {
@@ -59,7 +61,10 @@ export default function AppDetailPage() {
   };
 
   async function createCredential() {
-    if (createSel.length === 0) return alert("Selecione ao menos 1 API Product");
+    if (createSel.length === 0) {
+      alert("Selecione ao menos 1 API Product");
+      return;
+    }
     const body: any = { apiProducts: createSel };
     if (expiresIn) {
       const num = Number(expiresIn);
@@ -85,7 +90,9 @@ export default function AppDetailPage() {
 
   async function deleteKey(key: string) {
     if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`, { method: "DELETE" });
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`, {
+      method: "DELETE",
+    });
     await refresh();
   }
 
@@ -134,7 +141,7 @@ export default function AppDetailPage() {
                 const opts = Array.from(e.target.selectedOptions).map(o => o.value);
                 setCreateSel(opts);
               }} className="border rounded p-2 min-w-[240px] h-32">
-                {allProducts.map(p => <option key={p} value={p}>{p}</option>)}
+                {products.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <input className="border rounded p-2" placeholder="keyExpiresIn (ms) opcional" value={expiresIn} onChange={e=>setExpiresIn(e.target.value)} />
               <button className="px-3 py-2 rounded bg-black text-white" onClick={createCredential}>Criar</button>
@@ -145,7 +152,7 @@ export default function AppDetailPage() {
             <h2 className="text-lg font-semibold mb-3">Credenciais</h2>
             <div className="space-y-4">
               {(app.credentials || []).map((c) => {
-                const notAssoc = allProducts.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
+                const notAssoc = products.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
                 return (
                   <div key={c.consumerKey} className="border rounded-xl p-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
