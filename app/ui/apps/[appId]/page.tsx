@@ -1,5 +1,4 @@
-
-"use client";
+\"use client\";
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useParams } from "next/navigation";
 
@@ -26,7 +25,6 @@ async function fetchJson(url: string, init?: RequestInit) {
 }
 
 function credHref(appId: string, key: string, org: string) {
-  // UI route (NOT the API route)
   const base = "/ui/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key);
   return base + (org ? ("?org=" + encodeURIComponent(org)) : "");
 }
@@ -56,7 +54,10 @@ export default function AppDetailPage() {
         setApp(detail);
         try {
           const pr = await fetchJson("/api/products" + qs);
-          setProducts((pr && (pr.apiProduct || pr.names)) || []);
+          const names: string[] = Array.isArray(pr)
+            ? pr.map((p: any) => p?.name).filter(Boolean)
+            : (pr.names ?? pr.apiProduct ?? []);
+          setProducts(names);
         } catch {}
       } catch (e: any) {
         setError(e.message || String(e));
