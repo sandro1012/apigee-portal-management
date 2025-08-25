@@ -1,111 +1,116 @@
-
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useParams, useRouter } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
-type CredProduct = { apiproduct: string; status?: string };
-type Credential = {
-  consumerKey: string;
-  consumerSecret?: string;
-  status?: string;
-  apiProducts?: CredProduct[];
-};
+type ApiProductRef = { apiproduct: string; status?: string };
+type Credential = { consumerKey: string; consumerSecret?: string; status?: string; apiProducts?: ApiProductRef[] };
 type DevApp = {
   name: string;
   appId?: string;
-  developerEmail?: string;
-  developerId?: string;
+  status?: string;
   credentials?: Credential[];
 };
 
 async function fetchJson(url: string, init?: RequestInit) {
   const r = await fetch(url, init);
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.text()) || msg; } catch {}
+    throw new Error(msg);
+  }
   return await r.json();
 }
 
 export default function CredentialDetailPage() {
-  const router = useRouter();
   const { appId, consumerKey } = useParams<{ appId: string; consumerKey: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
+  const appIdStr = String(appId || "");
+  const keyStr = String(consumerKey || "");
 
   const [app, setApp] = useState<DevApp | null>(null);
-  const [error, setError] = useState<string>("");
+  const [cred, setCred] = useState<Credential | null>(null);
+  const [allProducts, setAllProducts] = useState<string[]>([]);
+  const [addSel, setAddSel] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [products, setProducts] = useState<string[]>([]);
+  const [err, setErr] = useState<string>("");
 
-  const cred = useMemo(() => {
-    return (app?.credentials || []).find(c => c.consumerKey === consumerKey) || null;
-  }, [app, consumerKey]);
+  const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
 
-  useEffect(() => {
-    const run = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}${org ? `?org=${encodeURIComponent(org)}` : ""}`);
-        setApp(detail);
-        const pr = await fetchJson(`/api/products${org ? `?org=${encodeURIComponent(org)}` : ""}`);
-        setProducts(pr?.apiProduct || pr?.names || []);
-      } catch (e:any) {
-        setError(e.message || String(e));
-      } finally {
-        setLoading(false);
+  const currentProducts = useMemo(() => (cred?.apiProducts || []).map(p => p.apiproduct), [cred]);
+  const availableProducts = useMemo(() => allProducts.filter(p => !currentProducts.includes(p)), [allProducts, currentProducts]);
+
+  async function load() {
+    setLoading(true); setErr("");
+    try {
+      // app + cred
+      const detail: DevApp = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
+      setApp(detail);
+      const found = (detail.credentials || []).find(c => c.consumerKey === keyStr) || null;
+      setCred(found);
+
+      // products (lenient shapes: array of strings OR array of {name} OR {apiProduct:[]})
+      const pr = await fetchJson(`/api/products${qs}`);
+      let names: string[] = [];
+      if (Array.isArray(pr)) {
+        if (pr.length > 0 && typeof pr[0] === "string") {
+          names = pr as string[];
+        } else if (pr.length > 0 && typeof pr[0] === "object" && pr[0]?.name) {
+          names = (pr as any[]).map((x: any) => String(x.name));
+        }
+      } else if (pr?.apiProduct && Array.isArray(pr.apiProduct)) {
+        names = (pr.apiProduct as any[]).map((x: any) => String(x.name || x.displayName || x));
+      } else if (pr?.names && Array.isArray(pr.names)) {
+        names = pr.names as string[];
       }
-    };
-    run();
-  }, [appId, org]);
-
-  const refresh = async () => {
-    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}${org ? `?org=${encodeURIComponent(org)}` : ""}`);
-    setApp(detail);
-  };
-
-  async function setStatus(action: "approve"|"revoke") {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(consumerKey)}/status${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    await refresh();
+      setAllProducts(names.sort((a,b)=>a.localeCompare(b)));
+      if (names.length > 0) setAddSel(names[0]);
+    } catch (e: any) {
+      setErr(e.message || String(e));
+    } finally { setLoading(false); }
   }
 
-  async function deleteKey() {
-    if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(consumerKey)}${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
-      method: "DELETE",
+  useEffect(() => { if (appIdStr && keyStr) load(); }, [appIdStr, keyStr, org]);
+
+  async function approve() {
+    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(keyStr)}/status${qs}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve" })
     });
+    await load();
+  }
+  async function revoke() {
+    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(keyStr)}/status${qs}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "revoke" })
+    });
+    await load();
+  }
+  async function del() {
+    if (!confirm("Excluir credencial?")) return;
+    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(keyStr)}${qs}`, { method: "DELETE" });
     // volta para a página do app
-    router.push(`/ui/apps/${encodeURIComponent(appId)}${org ? `?org=${encodeURIComponent(org)}` : ""}`);
+    window.location.href = `/ui/apps/${encodeURIComponent(appIdStr)}${qs}`;
   }
-
-  async function addProduct(p: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(consumerKey)}/products/add${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiProduct: p }),
+  async function addProduct() {
+    if (!addSel) return;
+    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(keyStr)}/products/add${qs}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiProduct: addSel })
     });
-    await refresh();
+    await load();
   }
-
   async function removeProduct(p: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(consumerKey)}/products/${encodeURIComponent(p)}${org ? `?org=${encodeURIComponent(org)}` : ""}`, {
-      method: "DELETE",
-    });
-    await refresh();
+    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(keyStr)}/products/${encodeURIComponent(p)}${qs}`, { method: "DELETE" });
+    await load();
   }
-
-  const notAssoc = useMemo(() => {
-    const set = new Set((cred?.apiProducts || []).map(p => p.apiproduct));
-    return products.filter(p => !set.has(p));
-  }, [products, cred]);
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Credencial do App</h1>
-      {loading && <div>Carregando...</div>}
-      {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">Credencial do App</h1>
+        <span className="text-xs px-2 py-1 rounded-full border">v3-products</span>
+      </div>
+
+      {loading && <div>Carregando…</div>}
+      {err && <div className="text-red-600 whitespace-pre-wrap">Erro: {err}</div>}
 
       {app && cred && (
         <div className="space-y-6">
@@ -124,18 +129,18 @@ export default function CredentialDetailPage() {
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-            <div className="text-xs text-zinc-500">Secret</div>
+          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
+            <h2 className="text-lg font-semibold mb-3">Secret</h2>
             <div className="font-mono break-all">{cred.consumerSecret || "-"}</div>
-          </div>
+          </section>
 
           <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
             <h2 className="text-lg font-semibold mb-3">Ações</h2>
             <div className="flex flex-wrap gap-2">
-              <button className="px-3 py-1 rounded bg-emerald-600 text-white" onClick={()=>setStatus("approve")}>Aprovar</button>
-              <button className="px-3 py-1 rounded bg-amber-600 text-white" onClick={()=>setStatus("revoke")}>Revogar</button>
-              <button className="px-3 py-1 rounded bg-rose-600 text-white" onClick={deleteKey}>Excluir credencial</button>
-              <button className="px-3 py-1 rounded border" onClick={()=>router.push(`/ui/apps/${encodeURIComponent(appId)}${org ? `?org=${encodeURIComponent(org)}` : ""}`)}>Voltar ao App</button>
+              <button className="px-3 py-2 rounded bg-emerald-600 text-white" onClick={approve}>Aprovar</button>
+              <button className="px-3 py-2 rounded bg-amber-600 text-white" onClick={revoke}>Revogar</button>
+              <button className="px-3 py-2 rounded bg-rose-600 text-white" onClick={del}>Excluir credencial</button>
+              <a className="px-3 py-2 rounded border" href={`/ui/apps/${encodeURIComponent(appIdStr)}${qs}`}>Voltar ao App</a>
             </div>
           </section>
 
@@ -145,21 +150,20 @@ export default function CredentialDetailPage() {
               {(cred.apiProducts || []).map(p => (
                 <span key={p.apiproduct} className="inline-flex items-center gap-2 border rounded-full px-2 py-1 text-sm">
                   {p.apiproduct}
-                  <button className="text-rose-600" onClick={()=>removeProduct(p.apiproduct)} title="remover">×</button>
+                  <button className="text-rose-600" title="remover" onClick={() => removeProduct(p.apiproduct)}>×</button>
                 </span>
               ))}
+              {(cred.apiProducts || []).length === 0 && <div className="text-sm opacity-70">Nenhum product associado.</div>}
             </div>
+
             <div className="mt-3 flex gap-2 items-center">
-              <select className="border rounded p-1" defaultValue="">
-                <option value="" disabled>Adicionar product…</option>
-                {notAssoc.map(p => <option key={p} value={p}>{p}</option>)}
+              <select className="border rounded p-2 min-w-[220px]" value={addSel} onChange={e=>setAddSel(e.target.value)}>
+                {availableProducts.length === 0 && <option value="">Nenhum product disponível</option>}
+                {availableProducts.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <button className="px-2 py-1 rounded bg-indigo-600 text-white" onClick={(e)=>{
-                const sel = (e.currentTarget.previousSibling as HTMLSelectElement);
-                const val = sel?.value || "";
-                if (val) addProduct(val);
-              }}>Adicionar</button>
+              <button className="px-3 py-2 rounded bg-indigo-600 text-white" disabled={!addSel} onClick={addProduct}>Adicionar</button>
             </div>
+            <div className="text-xs text-zinc-500 mt-2">A lista acima mostra apenas os products ainda não associados a esta credencial.</div>
           </section>
         </div>
       )}
