@@ -69,6 +69,13 @@ export default function AppsPage() {
     setSelected(j);
   }
 
+  // monta o link de gestão (v3) com manage=1 para redirecionar à 1ª credencial
+  function manageHref(appId?: string) {
+    if (!appId) return "#";
+    const qs = `?org=${encodeURIComponent(org)}&manage=1`;
+    return `/ui/apps/${encodeURIComponent(appId)}${qs}`;
+  }
+
   const filtered = useMemo(() => {
     const t = q.toLowerCase();
     return items.filter(a => (`${a.name} ${a.appId||''}`).toLowerCase().includes(t));
@@ -126,20 +133,29 @@ export default function AppsPage() {
               <tr>
                 <th style={{textAlign:'left', padding:'8px 6px'}}>App</th>
                 <th style={{textAlign:'left', padding:'8px 6px'}}>Status</th>
+                <th style={{textAlign:'left', padding:'8px 6px'}}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {pageItems.map(a => (
-                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}}
-                    onClick={()=> a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
-                  <td style={{padding:'8px 6px'}}>
+                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)'}}>
+                  <td style={{padding:'8px 6px', cursor:'pointer'}} onClick={() => a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
                     <div style={{fontWeight:600}}>{a.name}</div>
                     <div className="small" style={{opacity:.8}}>{a.appId}</div>
                   </td>
                   <td style={{padding:'8px 6px'}}>{a.status || '-'}</td>
+                  <td style={{padding:'8px 6px'}}>
+                    <a
+                      href={manageHref(a.appId)}
+                      className="btn small"
+                      onClick={e => { if (!a.appId) { e.preventDefault(); alert('App sem appId retornado pelo Apigee'); } }}
+                    >
+                      Gerenciar
+                    </a>
+                  </td>
                 </tr>
               ))}
-              {pageItems.length===0 && <tr><td colSpan={2} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
+              {pageItems.length===0 && <tr><td colSpan={3} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
             </tbody>
           </table>
 
@@ -174,17 +190,18 @@ export default function AppsPage() {
                 <div>
                   <b>Credenciais</b>
                   <ul>
-                    {selected.credentials.map((c,i)=>(
-                      <li key={i} style={{marginBottom:6}}>
-                        <div><code>Key:</code> {c.consumerKey}</div>
-                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
-                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
-                        {c.apiProducts && c.apiProducts.length>0 && (
-                          <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
-                        )}
-                      </li>
-                    ))}
+                    {selected.credentials.map((c,i)=>(<li key={i} style={{marginBottom:6}}>
+                      <div><code>Key:</code> {c.consumerKey}</div>
+                      {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                      <div className="small"><b>Status:</b> {c.status || '-'}</div>
+                    </li>))}
                   </ul>
+                </div>
+              )}
+              {/* Botão Gerenciar no painel de detalhes também */}
+              {selected?.appId && (
+                <div style={{marginTop:4}}>
+                  <a className="btn" href={manageHref(selected.appId)}>Gerenciar</a>
                 </div>
               )}
             </div>
