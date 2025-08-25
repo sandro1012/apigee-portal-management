@@ -1,4 +1,5 @@
-﻿"use client";
+
+"use client";
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useParams } from "next/navigation";
 
@@ -41,12 +42,14 @@ export default function AppDetailPage() {
       setLoading(true);
       setError("");
       try {
-        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`);
+        const base = "/api/apps/" + encodeURIComponent(appId);
+        const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
+        const detail = await fetchJson(base + qs);
         setApp(detail);
         // tenta carregar a lista de products (se falhar, segue sem bloquear as outras ações)
         try {
-          const pr = await fetchJson(`/api/products${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`);
-          setProducts(pr?.apiProduct || pr?.names || []);
+          const pr = await fetchJson("/api/products" + qs);
+          setProducts((pr && (pr.apiProduct || pr.names)) || []);
         } catch {}
       } catch (e: any) {
         setError(e.message || String(e));
@@ -58,7 +61,9 @@ export default function AppDetailPage() {
   }, [appId, org]);
 
   const refresh = async () => {
-    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`);
+    const base = "/api/apps/" + encodeURIComponent(appId);
+    const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
+    const detail = await fetchJson(base + qs);
     setApp(detail);
   };
 
@@ -69,7 +74,8 @@ export default function AppDetailPage() {
       const n = Number(expiresIn);
       if (!Number.isNaN(n)) body.keyExpiresIn = n;
     }
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`, {
+    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials" + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    await fetchJson(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -79,7 +85,8 @@ export default function AppDetailPage() {
   }
 
   async function setStatus(key: string, action: "approve"|"revoke") {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/status${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`, {
+    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + "/status" + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    await fetchJson(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action }),
@@ -89,14 +96,14 @@ export default function AppDetailPage() {
 
   async function deleteKey(key: string) {
     if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`, {
-      method: "DELETE",
-    });
+    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    await fetchJson(url, { method: "DELETE" });
     await refresh();
   }
 
   async function addProduct(key: string, product: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/add${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`, {
+    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + "/products/add" + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    await fetchJson(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiProduct: product }),
@@ -105,9 +112,8 @@ export default function AppDetailPage() {
   }
 
   async function removeProduct(key: string, product: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}${org ? \`?org=\${encodeURIComponent(org)}\` : ""}`, {
-      method: "DELETE",
-    });
+    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + "/products/" + encodeURIComponent(product) + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    await fetchJson(url, { method: "DELETE" });
     await refresh();
   }
 
@@ -171,13 +177,13 @@ export default function AppDetailPage() {
                         {(c.apiProducts||[]).map(p => (
                           <span key={p.apiproduct} className="inline-flex items-center gap-2 border rounded-full px-2 py-1 text-sm">
                             {p.apiproduct}
-                            <button className="text-rose-600" title="remover" onClick={()=>removeProduct(c.consumerKey, p.apiproduct)}></button>
+                            <button className="text-rose-600" title="remover" onClick={()=>removeProduct(c.consumerKey, p.apiproduct)}>×</button>
                           </span>
                         ))}
                       </div>
                       <div className="mt-2 flex gap-2 items-center">
                         <select className="border rounded p-1" defaultValue="">
-                          <option value="" disabled>Adicionar product</option>
+                          <option value="" disabled>Adicionar product…</option>
                           {notAssoc.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                         <button className="px-2 py-1 rounded bg-indigo-600 text-white" onClick={(e)=>{
