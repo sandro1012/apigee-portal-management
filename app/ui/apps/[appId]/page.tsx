@@ -25,6 +25,11 @@ async function fetchJson(url: string, init?: RequestInit) {
   return await r.json();
 }
 
+function credHref(appId: string, key: string, org: string) {
+  const base = "/ui/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key);
+  return base + (org ? ("?org=" + encodeURIComponent(org)) : "");
+}
+
 export default function AppDetailPage() {
   const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
@@ -42,11 +47,10 @@ export default function AppDetailPage() {
       setLoading(true);
       setError("");
       try {
-        const base = "/api/apps/" + encodeURIComponent(appId);
+        const base = "/api/apps/" + encodeURIComponent(String(appId));
         const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
         const detail = await fetchJson(base + qs);
         setApp(detail);
-        // tenta carregar a lista de products (se falhar, segue sem bloquear as outras ações)
         try {
           const pr = await fetchJson("/api/products" + qs);
           setProducts((pr && (pr.apiProduct || pr.names)) || []);
@@ -61,7 +65,7 @@ export default function AppDetailPage() {
   }, [appId, org]);
 
   const refresh = async () => {
-    const base = "/api/apps/" + encodeURIComponent(appId);
+    const base = "/api/apps/" + encodeURIComponent(String(appId));
     const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
     const detail = await fetchJson(base + qs);
     setApp(detail);
@@ -74,7 +78,7 @@ export default function AppDetailPage() {
       const n = Number(expiresIn);
       if (!Number.isNaN(n)) body.keyExpiresIn = n;
     }
-    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials" + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    const url = "/api/apps/" + encodeURIComponent(String(appId)) + "/credentials" + (org ? ("?org=" + encodeURIComponent(org)) : "");
     await fetchJson(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -85,7 +89,7 @@ export default function AppDetailPage() {
   }
 
   async function setStatus(key: string, action: "approve"|"revoke") {
-    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + "/status" + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    const url = "/api/apps/" + encodeURIComponent(String(appId)) + "/credentials/" + encodeURIComponent(key) + "/status" + (org ? ("?org=" + encodeURIComponent(org)) : "");
     await fetchJson(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -96,13 +100,13 @@ export default function AppDetailPage() {
 
   async function deleteKey(key: string) {
     if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    const url = "/api/apps/" + encodeURIComponent(String(appId)) + "/credentials/" + encodeURIComponent(key) + (org ? ("?org=" + encodeURIComponent(org)) : "");
     await fetchJson(url, { method: "DELETE" });
     await refresh();
   }
 
   async function addProduct(key: string, product: string) {
-    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + "/products/add" + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    const url = "/api/apps/" + encodeURIComponent(String(appId)) + "/credentials/" + encodeURIComponent(key) + "/products/add" + (org ? ("?org=" + encodeURIComponent(org)) : "");
     await fetchJson(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -112,7 +116,7 @@ export default function AppDetailPage() {
   }
 
   async function removeProduct(key: string, product: string) {
-    const url = "/api/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key) + "/products/" + encodeURIComponent(product) + (org ? ("?org=" + encodeURIComponent(org)) : "");
+    const url = "/api/apps/" + encodeURIComponent(String(appId)) + "/credentials/" + encodeURIComponent(key) + "/products/" + encodeURIComponent(product) + (org ? ("?org=" + encodeURIComponent(org)) : "");
     await fetchJson(url, { method: "DELETE" });
     await refresh();
   }
@@ -159,10 +163,17 @@ export default function AppDetailPage() {
             <div className="space-y-4">
               {(app.credentials || []).map((c) => {
                 const notAssoc = products.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
+                const href = credHref(String(appId), c.consumerKey, org);
                 return (
                   <div key={c.consumerKey} className="border rounded-xl p-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
-                      <div><div className="text-xs text-zinc-500">Key</div><div className="font-mono text-sm break-all">{c.consumerKey}</div></div>
+                      <div>
+                        <div className="text-xs text-zinc-500">Key</div>
+                        <div className="flex items-center gap-2">
+                          <a href={href} className="font-mono text-sm underline break-all">{c.consumerKey}</a>
+                          <a href={href} className="px-2 py-1 rounded bg-indigo-600 text-white text-xs">Gerenciar</a>
+                        </div>
+                      </div>
                       <div><div className="text-xs text-zinc-500">Secret</div><div className="font-mono text-sm break-all">{c.consumerSecret || "-"}</div></div>
                       <div><div className="text-xs text-zinc-500">Status</div><div className="capitalize">{c.status}</div></div>
                       <div className="flex gap-2">
