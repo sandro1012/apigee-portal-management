@@ -69,11 +69,21 @@ export default function AppsPage() {
     setSelected(j);
   }
 
-  // monta o link de gestão (v3) com manage=1 para redirecionar à 1ª credencial
-  function manageHref(appId?: string) {
-    if (!appId) return "#";
-    const qs = `?org=${encodeURIComponent(org)}&manage=1`;
-    return `/ui/apps/${encodeURIComponent(appId)}${qs}`;
+  async function goManage(appId?: string) {
+    if (!appId) { alert('App sem appId retornado pelo Apigee'); return; }
+    try {
+      const r = await fetch(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
+      const j = await r.json();
+      if (!r.ok) { alert(j.error || 'Erro ao carregar app'); return; }
+      const key = j?.credentials?.[0]?.consumerKey;
+      if (key) {
+        window.location.href = `/ui/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`;
+      } else {
+        window.location.href = `/ui/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}&manage=1`;
+      }
+    } catch (err: any) {
+      alert(err?.message || String(err));
+    }
   }
 
   const filtered = useMemo(() => {
@@ -145,13 +155,7 @@ export default function AppsPage() {
                   </td>
                   <td style={{padding:'8px 6px'}}>{a.status || '-'}</td>
                   <td style={{padding:'8px 6px'}}>
-                    <a
-                      href={manageHref(a.appId)}
-                      className="btn small"
-                      onClick={e => { if (!a.appId) { e.preventDefault(); alert('App sem appId retornado pelo Apigee'); } }}
-                    >
-                      Gerenciar
-                    </a>
+                    <button className="btn small" onClick={() => goManage(a.appId)}>Gerenciar</button>
                   </td>
                 </tr>
               ))}
@@ -190,18 +194,19 @@ export default function AppsPage() {
                 <div>
                   <b>Credenciais</b>
                   <ul>
-                    {selected.credentials.map((c,i)=>(<li key={i} style={{marginBottom:6}}>
-                      <div><code>Key:</code> {c.consumerKey}</div>
-                      {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
-                      <div className="small"><b>Status:</b> {c.status || '-'}</div>
-                    </li>))}
+                    {selected.credentials.map((c,i)=>(
+                      <li key={i} style={{marginBottom:6}}>
+                        <div><code>Key:</code> {c.consumerKey}</div>
+                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
+                      </li>
+                    ))}
                   </ul>
                 </div>
               )}
-              {/* Botão Gerenciar no painel de detalhes também */}
               {selected?.appId && (
                 <div style={{marginTop:4}}>
-                  <a className="btn" href={manageHref(selected.appId)}>Gerenciar</a>
+                  <button className="btn" onClick={() => goManage(selected.appId!)}>Gerenciar</button>
                 </div>
               )}
             </div>

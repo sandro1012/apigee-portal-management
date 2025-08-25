@@ -42,7 +42,6 @@ export default function AppDetailSimple() {
         const detail = await fetchJson("/api/apps/" + encodeURIComponent(appIdStr) + qs);
         setApp(detail);
 
-        // se pediram manage=1 e há credencial, redireciona p/ a 1ª
         if (manageFlag) {
           const firstKey = detail?.credentials?.[0]?.consumerKey;
           if (firstKey) {
@@ -57,7 +56,6 @@ export default function AppDetailSimple() {
     if (appIdStr) run();
   }, [appIdStr, org, manageFlag]);
 
-  // link “Gerenciar” manual (caso não tenha havido redirect)
   const firstKey = app?.credentials?.[0]?.consumerKey;
   const credLink = firstKey ? credHref(appIdStr, firstKey, org) : null;
 
