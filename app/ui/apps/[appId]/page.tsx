@@ -26,8 +26,7 @@ async function fetchJson(url: string, init?: RequestInit) {
 }
 
 function credHref(appId: string, key: string, org: string) {
-  // UI route (NOT the API route):
-  // /ui/apps/{appId}/credentials/{consumerKey}?org=...
+  // UI route (NOT the API route)
   const base = "/ui/apps/" + encodeURIComponent(appId) + "/credentials/" + encodeURIComponent(key);
   return base + (org ? ("?org=" + encodeURIComponent(org)) : "");
 }
@@ -127,7 +126,10 @@ export default function AppDetailPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Detalhes do App</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">Detalhes do App</h1>
+        <span className="text-xs px-2 py-1 rounded-full border">v3-link</span>
+      </div>
       {loading && <div>Carregando...</div>}
       {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
 
