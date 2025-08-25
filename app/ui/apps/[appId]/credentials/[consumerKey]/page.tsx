@@ -20,11 +20,17 @@ export default function CredentialDetailPage() {
   const { appId, consumerKey } = useParams<{ appId: string; consumerKey: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
+  const env = search.get("env") || "";
 
   const appIdStr = String(appId || "");
   const keyStr = String(consumerKey || "");
-  const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
-  const qsManage = org ? (`?org=${encodeURIComponent(org)}&manage=1`) : "?manage=1";
+  const qs = (() => {
+    const p = new URLSearchParams();
+    if (org) p.set("org", org);
+    if (env) p.set("env", env);
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  })();
 
   const [app, setApp] = useState<DevApp | null>(null);
   const [cred, setCred] = useState<Credential | null>(null);
@@ -38,7 +44,6 @@ export default function CredentialDetailPage() {
   const [addSel, setAddSel] = useState<string>("");
 
   // inline "nova credencial"
-  const [showCreate, setShowCreate] = useState(false);
   const [createSel, setCreateSel] = useState<string[]>([]);
   const [expiresIn, setExpiresIn] = useState<string>(""); // ms
 
@@ -69,7 +74,7 @@ export default function CredentialDetailPage() {
       setErr(e.message || String(e));
     } finally { setLoading(false); }
   }
-  useEffect(() => { if (appIdStr && keyStr) load(); }, [appIdStr, keyStr, org]);
+  useEffect(() => { if (appIdStr && keyStr) load(); }, [appIdStr, keyStr, org, env]);
 
   // ações credencial
   async function approve() {
@@ -87,8 +92,8 @@ export default function CredentialDetailPage() {
   async function del() {
     if (!confirm("Excluir credencial?")) return;
     await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(keyStr)}${qs}`, { method: "DELETE" });
-    // volta para a UI do App (não para rota API)
-    window.location.href = `/ui/apps/${encodeURIComponent(appIdStr)}${qs}`;
+    // volta para a lista de Apps
+    window.location.href = `/ui/apps${qs}`;
   }
 
   async function addProduct() {
@@ -114,125 +119,120 @@ export default function CredentialDetailPage() {
     await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials${qs}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
     });
-    setShowCreate(false); setCreateSel([]); setExpiresIn("");
+    setCreateSel([]); setExpiresIn("");
     await load();
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold">Credencial do App</h1>
-        <span className="text-xs px-2 py-1 rounded-full border">v3b</span>
-        <div className="ml-auto flex gap-2">
-          <a className="px-3 py-2 rounded bg-zinc-900 text-white" href={`/ui/apps/${encodeURIComponent(appIdStr)}${qs}`}>Voltar ao App</a>
-          <a className="px-3 py-2 rounded border" href={`/ui/apps/${encodeURIComponent(appIdStr)}${qsManage}`}>Abrir gestão do App</a>
-        </div>
+    <main style={{display:'grid', gap:12}}>
+      <div style={{display:'flex', alignItems:'center', gap:8}}>
+        <h1 style={{margin:0}}>Credencial do App</h1>
+        <span className="small" style={{border:'1px solid var(--border)', padding:'2px 6px', borderRadius:12}}>v3c</span>
       </div>
 
       {loading && <div>Carregando…</div>}
-      {err && <div className="text-red-600 whitespace-pre-wrap">Erro: {err}</div>}
+      {err && <div style={{color:'#c0392b', whiteSpace:'pre-wrap'}}>Erro: {err}</div>}
 
       {app && cred && (
-        <div className="space-y-6">
+        <div style={{display:'grid', gap:12}}>
           {/* Linha principal: App / Key / Secret */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-              <div className="text-xs text-zinc-500">App</div>
-              <div className="font-medium break-all">{app.name}</div>
+          <div style={{display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))'}}>
+            <div className="card">
+              <div className="small" style={{opacity:.7}}>App</div>
+              <div style={{fontWeight:600, wordBreak:'break-word'}}>{app.name}</div>
             </div>
-            <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-              <div className="text-xs text-zinc-500">Key</div>
-              <div className="font-mono text-sm break-all">{cred.consumerKey}</div>
+            <div className="card">
+              <div className="small" style={{opacity:.7}}>Key</div>
+              <div style={{fontFamily:'monospace', fontSize:13, wordBreak:'break-word'}}>{cred.consumerKey}</div>
             </div>
-            <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-              <div className="text-xs text-zinc-500">Secret</div>
-              <div className="font-mono text-sm break-all">{cred.consumerSecret || "-"}</div>
+            <div className="card">
+              <div className="small" style={{opacity:.7}}>Secret</div>
+              <div style={{fontFamily:'monospace', fontSize:13, wordBreak:'break-word'}}>{cred.consumerSecret || "-"}</div>
             </div>
           </div>
 
           {/* Status + Ações */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-              <div className="text-xs text-zinc-500">Status</div>
-              <div className="capitalize">{cred.status}</div>
+          <div style={{display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))'}}>
+            <div className="card">
+              <div className="small" style={{opacity:.7}}>Status</div>
+              <div style={{textTransform:'capitalize'}}>{cred.status}</div>
             </div>
-            <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900 md:col-span-2">
-              <div className="text-xs text-zinc-500 mb-2">Ações</div>
-              <div className="flex flex-wrap gap-2">
-                <button className="px-3 py-2 rounded bg-emerald-600 text-white" onClick={approve}>Aprovar</button>
-                <button className="px-3 py-2 rounded bg-amber-600 text-white" onClick={revoke}>Revogar</button>
-                <button className="px-3 py-2 rounded bg-rose-600 text-white" onClick={del}>Excluir credencial</button>
+            <div className="card" style={{display:'grid', gap:8}}>
+              <div className="small" style={{opacity:.7}}>Ações</div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                <button onClick={approve} className="primary">Aprovar</button>
+                <button onClick={revoke} className="warn">Revogar</button>
+                <button onClick={del} className="danger">Excluir credencial</button>
               </div>
             </div>
           </div>
 
           {/* Nova credencial (inline) */}
-          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Nova credencial</h2>
-              <button className="px-3 py-2 rounded border" onClick={()=>setShowCreate(v=>!v)}>
-                {showCreate ? "Fechar" : "Abrir"}
-              </button>
+          <div className="card" style={{display:'grid', gap:8}}>
+            <h3 style={{margin:'0 0 4px 0'}}>Nova credencial</h3>
+            <div style={{display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start'}}>
+              <select
+                multiple
+                value={createSel}
+                onChange={(e) => {
+                  const opts = Array.from(e.target.selectedOptions).map(o => o.value);
+                  setCreateSel(opts);
+                }}
+                style={{border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:240, height:132}}
+              >
+                {allProducts.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input
+                placeholder="keyExpiresIn (ms) opcional"
+                value={expiresIn}
+                onChange={e=>setExpiresIn(e.target.value)}
+                style={{border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px'}}
+              />
+              <button onClick={createCredential} className="primary">Criar</button>
             </div>
-            {showCreate && (
-              <div className="flex flex-col md:flex-row gap-3 items-start">
-                <select
-                  multiple
-                  value={createSel}
-                  onChange={(e) => {
-                    const opts = Array.from(e.target.selectedOptions).map(o => o.value);
-                    setCreateSel(opts);
-                  }}
-                  className="border rounded p-2 min-w-[240px] h-32"
-                >
-                  {allProducts.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <input
-                  className="border rounded p-2"
-                  placeholder="keyExpiresIn (ms) opcional"
-                  value={expiresIn}
-                  onChange={e=>setExpiresIn(e.target.value)}
-                />
-                <button className="px-3 py-2 rounded bg-black text-white" onClick={createCredential}>Criar</button>
-              </div>
-            )}
-            {!showCreate && <div className="text-xs text-zinc-500">Abra para criar uma nova credencial com associação de products.</div>}
-          </section>
+            <small className="small" style={{opacity:.7}}>Selecione um ou mais products e, se quiser, defina expiração da key (em ms).</small>
+          </div>
 
           {/* Products associados */}
-          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-            <h2 className="text-lg font-semibold mb-3">Products associados</h2>
-            <div className="flex flex-wrap gap-2">
+          <div className="card" style={{display:'grid', gap:8}}>
+            <h3 style={{margin:'0 0 4px 0'}}>Products associados</h3>
+            <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
               {(cred.apiProducts || []).map(p => (
-                <span key={p.apiproduct} className="inline-flex items-center gap-2 border rounded-full px-2 py-1 text-sm">
+                <span key={p.apiproduct}
+                  style={{
+                    display:'inline-flex', alignItems:'center', gap:8,
+                    border:'1px solid var(--border)', borderRadius:999,
+                    padding:'4px 10px', fontSize:13
+                  }}>
                   {p.apiproduct}
-                  <button className="text-rose-600" title="remover" onClick={() => removeProduct(p.apiproduct)}>×</button>
+                  <button onClick={() => removeProduct(p.apiproduct)} className="danger" style={{padding:'2px 8px'}}>×</button>
                 </span>
               ))}
               {(cred.apiProducts || []).length === 0 && (
-                <div className="text-sm opacity-70">Nenhum product associado.</div>
+                <div className="small" style={{opacity:.7}}>Nenhum product associado.</div>
               )}
             </div>
 
-            <div className="mt-3 flex gap-2 items-center">
+            <div style={{display:'flex', gap:8, alignItems:'center', marginTop:4}}>
               <select
-                className="border rounded p-2 min-w-[220px]"
                 value={addSel}
                 onChange={e=>setAddSel(e.target.value)}
+                style={{border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', minWidth:220}}
               >
                 {availableProducts.length === 0 && <option value="">Nenhum product disponível</option>}
                 {availableProducts.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <button className="px-3 py-2 rounded bg-indigo-600 text-white" disabled={!addSel} onClick={addProduct}>
-                Adicionar
-              </button>
+              <button disabled={!addSel} onClick={addProduct} className="primary">Adicionar</button>
             </div>
-            <div className="text-xs text-zinc-500 mt-2">
-              A lista mostra apenas products ainda não associados.
-            </div>
-          </section>
+            <small className="small" style={{opacity:.7}}>O seletor mostra somente products ainda não associados.</small>
+          </div>
+
+          {/* Rodapé com Voltar */}
+          <div style={{display:'flex', justifyContent:'flex-end'}}>
+            <a href={`/ui/apps${qs}`}><button>Voltar à lista de Apps</button></a>
+          </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
