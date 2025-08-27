@@ -69,23 +69,6 @@ export default function AppsPage() {
     setSelected(j);
   }
 
-  async function goManage(appId?: string) {
-    if (!appId) { alert('App sem appId retornado pelo Apigee'); return; }
-    try {
-      const r = await fetch(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
-      const j = await r.json();
-      if (!r.ok) { alert(j.error || 'Erro ao carregar app'); return; }
-      const key = j?.credentials?.[0]?.consumerKey;
-      if (key) {
-        window.location.href = `/ui/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`;
-      } else {
-        window.location.href = `/ui/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}&manage=1`;
-      }
-    } catch (err: any) {
-      alert(err?.message || String(err));
-    }
-  }
-
   const filtered = useMemo(() => {
     const t = q.toLowerCase();
     return items.filter(a => (`${a.name} ${a.appId||''}`).toLowerCase().includes(t));
@@ -143,23 +126,20 @@ export default function AppsPage() {
               <tr>
                 <th style={{textAlign:'left', padding:'8px 6px'}}>App</th>
                 <th style={{textAlign:'left', padding:'8px 6px'}}>Status</th>
-                <th style={{textAlign:'left', padding:'8px 6px'}}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {pageItems.map(a => (
-                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)'}}>
-                  <td style={{padding:'8px 6px', cursor:'pointer'}} onClick={() => a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
+                <tr key={a.appId || a.name} style={{borderTop:'1px solid var(--border)', cursor:'pointer'}}
+                    onClick={()=> a.appId ? openAppById(a.appId) : alert('App sem appId retornado pelo Apigee')}>
+                  <td style={{padding:'8px 6px'}}>
                     <div style={{fontWeight:600}}>{a.name}</div>
                     <div className="small" style={{opacity:.8}}>{a.appId}</div>
                   </td>
                   <td style={{padding:'8px 6px'}}>{a.status || '-'}</td>
-                  <td style={{padding:'8px 6px'}}>
-                    <button className="btn small" onClick={() => goManage(a.appId)}>Gerenciar</button>
-                  </td>
                 </tr>
               ))}
-              {pageItems.length===0 && <tr><td colSpan={3} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
+              {pageItems.length===0 && <tr><td colSpan={2} style={{padding:'12px 8px', opacity:.7}}>Nenhum app</td></tr>}
             </tbody>
           </table>
 
@@ -194,19 +174,19 @@ export default function AppsPage() {
                 <div>
                   <b>Credenciais</b>
                   <ul>
-                    {selected.credentials.map((c,i)=>(
-                      <li key={i} style={{marginBottom:6}}>
-                        <div><code>Key:</code> {c.consumerKey}</div>
-                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
-                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
-                      </li>
-                    ))}
+                    {selected.credentials.map((c,i)=>(<li key={i} style={{marginBottom:6}}>
+                      <div><code>Key:</code> {c.consumerKey}</div>
+                      {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                      <div className="small"><b>Status:</b> {c.status || '-'}</div>
+                      {c.apiProducts && c.apiProducts.length>0 && (
+                        <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
+                      )}
+                      {/* link Gerenciar fica apenas aqui nos detalhes */}
+                      <div style={{marginTop:6}}>
+                        <a className="button" href={`/ui/apps/${encodeURIComponent(selected.appId||'')}/credentials/${encodeURIComponent(c.consumerKey)}?org=${encodeURIComponent(org)}`}>Gerenciar</a>
+                      </div>
+                    </li>))}
                   </ul>
-                </div>
-              )}
-              {selected?.appId && (
-                <div style={{marginTop:4}}>
-                  <button className="btn" onClick={() => goManage(selected.appId!)}>Gerenciar</button>
                 </div>
               )}
             </div>
