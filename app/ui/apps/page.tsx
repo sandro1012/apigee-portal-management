@@ -174,16 +174,18 @@ export default function AppsPage() {
                 <div>
                   <b>Credenciais</b>
                   <ul>
-                    {selected.credentials.map((c,i)=>(
-                      <li key={i} style={{marginBottom:6}}>
-                        <div><code>Key:</code> {c.consumerKey}</div>
-                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
-                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
-                        {c.apiProducts && c.apiProducts.length>0 && (
-                          <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
-                        )}
-                      </li>
-                    ))}
+                    {selected.credentials.map((c,i)=>(<li key={i} style={{marginBottom:6}}>
+                      <div><code>Key:</code> {c.consumerKey}</div>
+                      {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                      <div className="small"><b>Status:</b> {c.status || '-'}</div>
+                      {c.apiProducts && c.apiProducts.length>0 && (
+                        <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
+                      )}
+                      {/* link Gerenciar fica apenas aqui nos detalhes */}
+                      <div style={{marginTop:6}}>
+                        <a className="button" href={`/ui/apps/${encodeURIComponent(selected.appId||'')}/credentials/${encodeURIComponent(c.consumerKey)}?org=${encodeURIComponent(org)}`}>Gerenciar</a>
+                      </div>
+                    </li>))}
                   </ul>
                 </div>
               )}

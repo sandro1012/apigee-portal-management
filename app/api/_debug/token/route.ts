@@ -1,13 +1,11 @@
-import { NextResponse } from "next/server";
-import { readBearer } from "../../../../lib/util/bearer";
+import { cookies } from "next/headers";
 
-export async function GET(req: Request) {
-  try {
-    const b = readBearer(req);
-    // mascara o token no preview
-    const masked = b.replace(/Bearer\s+([\w-]{4})[\w.-]+([\w-]{4})/, "Bearer $1...$2");
-    return NextResponse.json({ ok: true, authorizationHeaderPreview: masked });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 401 });
-  }
+export async function GET() {
+  const v = cookies().get("gcp_token")?.value;
+  const has = !!v;
+  const preview = v ? (v.slice(0, 8) + "…" + v.slice(-6)) : null;
+  return new Response(JSON.stringify({ hasToken: has, tokenPreview: preview }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
