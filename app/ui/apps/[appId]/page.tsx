@@ -82,7 +82,7 @@ export default function AppDetailSimple() {
             </div>
           </div>
 
-          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
+          <section id="new-cred" hidden className=p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
             <h2 className="text-lg font-semibold mb-3">Ações</h2>
             <div className="flex flex-wrap gap-2">
               {credLink && <a className="px-3 py-2 rounded bg-indigo-600 text-white" href={credLink}>Gerenciar</a>}
@@ -92,7 +92,7 @@ export default function AppDetailSimple() {
             </div>
           </section>
 
-          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
+          <section id="new-cred" hidden className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
             <h2 className="text-lg font-semibold mb-3">Atributos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {(app.attributes || []).map(a => (
