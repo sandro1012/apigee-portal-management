@@ -81,7 +81,5 @@ export function buildKeyUrls(org: string, owner: AppOwner, consumerKey: string):
 }
 // --- Back-compat exports (rotas antigas esperam esses nomes) ---
 export const resolveDevAndApp = resolveApp;
-export const getBearer = readBearer;
-// --- Back-compat exports (rotas antigas esperam esses nomes) ---
-export const resolveDevAndApp = resolveApp;
-export const getBearer = readBearer;
+// NÃO exporte getBearer aqui; ele já existe nesse módulo
+
