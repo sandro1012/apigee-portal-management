@@ -79,3 +79,9 @@ export function buildKeyUrls(org: string, owner: AppOwner, consumerKey: string):
   urls.push(`/v1/organizations/${enc(org)}/apps/${enc(owner.appName)}/keys/${enc(consumerKey)}`);
   return urls;
 }
+// --- Back-compat exports (rotas antigas esperam esses nomes) ---
+export const resolveDevAndApp = resolveApp;
+export const getBearer = readBearer;
+// --- Back-compat exports (rotas antigas esperam esses nomes) ---
+export const resolveDevAndApp = resolveApp;
+export const getBearer = readBearer;
