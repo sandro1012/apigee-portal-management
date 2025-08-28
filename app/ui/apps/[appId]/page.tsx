@@ -1,5 +1,9 @@
 "use client";
+<<<<<<< HEAD
 import React, { useEffect, useState, useMemo } from "react";
+=======
+import React, { useEffect, useState } from "react";
+>>>>>>> fix/patch3h-apps-restore
 import { useSearchParams, useParams } from "next/navigation";
 
 type Credential = {
@@ -30,6 +34,7 @@ export default function AppManagePage() {
   const { appId } = useParams<{appId:string}>();
   const search = useSearchParams();
   const org = search.get("org") || "";
+<<<<<<< HEAD
   const appIdStr = String(appId||"");
 
   const [app, setApp] = useState<AppDetail|null>(null);
@@ -49,6 +54,55 @@ export default function AppManagePage() {
     };
     if (appIdStr) load();
   }, [appIdStr, org]);
+=======
+
+  const [app, setApp] = useState<DevApp | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [products, setProducts] = useState<string[]>([]);
+  const [createSel, setCreateSel] = useState<string[]>([]);
+  const [expiresIn, setExpiresIn] = useState<string>("");
+
+  useEffect(() => {
+    const run = async () => {
+      if (!org) return;
+      setLoading(true);
+      setError("");
+      try {
+        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
+        setApp(detail);
+        const pr = await fetchJson(`/api/products?org=${encodeURIComponent(org)}`);
+        setProducts(pr?.apiProduct || pr?.names || []);
+      } catch (e: any) {
+        setError(e.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
+  }, [appId, org]);
+
+  const refresh = async () => {
+    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
+    setApp(detail);
+  };
+
+  async function createCredential() {
+    if (createSel.length === 0) return alert("Selecione ao menos 1 API Product");
+    const body: any = { apiProducts: createSel };
+    if (expiresIn) {
+      const n = Number(expiresIn);
+      if (!Number.isNaN(n)) body.keyExpiresIn = n;
+    }
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials?org=${encodeURIComponent(org)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setCreateSel([]); setExpiresIn("");
+    await refresh();
+  }
+>>>>>>> fix/patch3h-apps-restore
 
   async function setStatus(key: string, action: "approve"|"revoke") {
     const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
@@ -57,6 +111,7 @@ export default function AppManagePage() {
       headers: {"content-type":"application/json"},
       body: JSON.stringify({ action })
     });
+<<<<<<< HEAD
     // refresh
     const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
     setApp(j);
@@ -67,6 +122,33 @@ export default function AppManagePage() {
     await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}${qs}`, { method: "DELETE" });
     const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
     setApp(j);
+=======
+    await refresh();
+  }
+
+  async function deleteKey(key: string) {
+    if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`, {
+      method: "DELETE",
+    });
+    await refresh();
+  }
+
+  async function addProduct(key: string, product: string) {
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/add?org=${encodeURIComponent(org)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiProduct: product }),
+    });
+    await refresh();
+  }
+
+  async function removeProduct(key: string, product: string) {
+    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}?org=${encodeURIComponent(org)}`, {
+      method: "DELETE",
+    });
+    await refresh();
+>>>>>>> fix/patch3h-apps-restore
   }
 
   async function addProduct(key: string, product: string) {
@@ -87,6 +169,7 @@ export default function AppManagePage() {
 
   return (
     <div className="p-6 space-y-6">
+<<<<<<< HEAD
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Gerenciar credenciais do App <span className="text-xs px-2 py-1 rounded-full border ml-2">v3c</span></h1>
         <a href={backHref} className="px-3 py-1 rounded bg-yellow-400 text-black font-medium">← Voltar aos Apps</a>
@@ -94,6 +177,13 @@ export default function AppManagePage() {
 
       {loading && <div>Carregando…</div>}
       {err && <div className="text-red-600 whitespace-pre-wrap">Erro: {err}</div>}
+=======
+      <h1 className="text-2xl font-bold">Detalhes do App</h1>
+      {!org && <div className="text-sm text-zinc-600">Defina a <strong>org</strong> via URL (?org=...) para carregar.</div>}
+      {loading && <div>Carregando...</div>}
+      {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
+
+>>>>>>> fix/patch3h-apps-restore
       {app && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -111,11 +201,32 @@ export default function AppManagePage() {
             </div>
           </div>
 
+<<<<<<< HEAD
+=======
+          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900" id="new-cred">
+            <h2 className="text-lg font-semibold mb-3">Nova credencial</h2>
+            <div className="flex flex-col md:flex-row gap-3 items-start">
+              <select multiple value={createSel} onChange={(e) => {
+                const opts = Array.from(e.target.selectedOptions).map(o => o.value);
+                setCreateSel(opts);
+              }} className="border rounded p-2 min-w-[240px] h-32">
+                {products.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input className="border rounded p-2" placeholder="keyExpiresIn (ms) opcional" value={expiresIn} onChange={e=>setExpiresIn(e.target.value)} />
+              <button className="px-3 py-2 rounded bg-black text-white" onClick={createCredential}>Criar</button>
+            </div>
+          </section>
+
+>>>>>>> fix/patch3h-apps-restore
           <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
             <h2 className="text-lg font-semibold mb-3">Credenciais</h2>
             <div className="space-y-4">
               {(app.credentials || []).map((c) => {
+<<<<<<< HEAD
                 const notAssoc = []; // products list opcional removida por ora
+=======
+                const notAssoc = products.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
+>>>>>>> fix/patch3h-apps-restore
                 return (
                   <div key={c.consumerKey} className="border rounded-xl p-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
