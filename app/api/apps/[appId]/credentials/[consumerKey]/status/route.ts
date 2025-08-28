@@ -1,6 +1,6 @@
 ﻿// app/api/apps/[appId]/credentials/[consumerKey]/status/route.ts
 import { NextResponse } from "next/server";
-import { readBearer, resolveApp, buildKeyUrls } from "../../../../../../lib/util/resolveApp";
+import { resolveApp as resolveDevAndApp } from "../../../../../../lib/util/resolveApp";
 
 export async function POST(req: Request, ctx: { params: { appId: string; consumerKey: string } }) {
   try {

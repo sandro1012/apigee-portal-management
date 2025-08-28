@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveDevAndApp } from "../../../../../../lib/util/resolveApp";
+import { resolveApp as resolveDevAndApp } from "../../../../../lib/util/resolveApp";
 
 export async function DELETE(req: Request, { params }: { params: { appId: string, consumerKey: string } }) {
   try {
