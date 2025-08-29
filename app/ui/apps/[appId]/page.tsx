@@ -1,9 +1,5 @@
 "use client";
-<<<<<<< HEAD
-import React, { useEffect, useState, useMemo } from "react";
-=======
 import React, { useEffect, useState } from "react";
->>>>>>> fix/patch3h-apps-restore
 import { useSearchParams, useParams } from "next/navigation";
 
 type Credential = {
@@ -12,9 +8,11 @@ type Credential = {
   status?: string;
   apiProducts?: { apiproduct: string; status?: string }[];
 };
-type AppDetail = {
+
+type DevApp = {
   name: string;
   appId?: string;
+  developerId?: string;
   developerEmail?: string;
   status?: string;
   attributes?: { name: string; value: string }[];
@@ -23,169 +21,135 @@ type AppDetail = {
 
 async function fetchJson(url: string, init?: RequestInit) {
   const r = await fetch(url, init);
-  const text = await r.text();
-  let j: any = null;
-  try { j = text ? JSON.parse(text) : null; } catch {}
-  if (!r.ok) throw new Error(j?.error || r.statusText || text || "Erro");
-  return j;
+  const txt = await r.text();
+  const data = txt ? JSON.parse(txt) : null;
+  if (!r.ok) throw new Error(data?.error || r.statusText);
+  return data;
 }
 
-export default function AppManagePage() {
-  const { appId } = useParams<{appId:string}>();
+function normalizeProductNames(input: any): string[] {
+  if (!input) return [];
+  if (Array.isArray(input)) {
+    // pode já ser array de strings ou array de objetos {name}
+    if (typeof input[0] === "string") return input as string[];
+    return (input as any[]).map((x) => x?.name).filter(Boolean);
+  }
+  if (Array.isArray(input.apiProduct)) return input.apiProduct;
+  if (Array.isArray(input.apiProducts)) return input.apiProducts.map((x: any) => x?.name).filter(Boolean);
+  if (Array.isArray(input.names)) return input.names;
+  return [];
+}
+
+export default function AppCredsManagePage() {
+  const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
-<<<<<<< HEAD
-  const appIdStr = String(appId||"");
 
-  const [app, setApp] = useState<AppDetail|null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-
-  useEffect(()=>{
-    const load = async () => {
-      setLoading(true); setErr("");
-      try {
-        const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
-        const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
-        setApp(j);
-      } catch (e:any) {
-        setErr(e.message || String(e));
-      } finally { setLoading(false); }
-    };
-    if (appIdStr) load();
-  }, [appIdStr, org]);
-=======
+  const appIdStr = String(appId || "");
 
   const [app, setApp] = useState<DevApp | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>("");
-  const [products, setProducts] = useState<string[]>([]);
-  const [createSel, setCreateSel] = useState<string[]>([]);
-  const [expiresIn, setExpiresIn] = useState<string>("");
+  const [err, setErr] = useState<string>("");
 
+  // lista de products (nomes) para combo de adicionar a uma credencial
+  const [products, setProducts] = useState<string[]>([]);
+
+  // carrega detalhe do app + lista de products
   useEffect(() => {
-    const run = async () => {
-      if (!org) return;
+    const load = async () => {
       setLoading(true);
-      setError("");
+      setErr("");
       try {
-        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
+        const qs = org ? "?org=" + encodeURIComponent(org) : "";
+        const detail = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
         setApp(detail);
-        const pr = await fetchJson(`/api/products?org=${encodeURIComponent(org)}`);
-        setProducts(pr?.apiProduct || pr?.names || []);
+
+        // products (não bloqueia a tela se falhar)
+        try {
+          const pr = await fetchJson(`/api/products${qs}`);
+          setProducts(normalizeProductNames(pr));
+        } catch (_) {
+          setProducts([]);
+        }
       } catch (e: any) {
-        setError(e.message || String(e));
+        setErr(e.message || String(e));
       } finally {
         setLoading(false);
       }
     };
-    run();
-  }, [appId, org]);
+    if (appIdStr) load();
+  }, [appIdStr, org]);
 
-  const refresh = async () => {
-    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
-    setApp(detail);
-  };
-
-  async function createCredential() {
-    if (createSel.length === 0) return alert("Selecione ao menos 1 API Product");
-    const body: any = { apiProducts: createSel };
-    if (expiresIn) {
-      const n = Number(expiresIn);
-      if (!Number.isNaN(n)) body.keyExpiresIn = n;
-    }
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials?org=${encodeURIComponent(org)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    setCreateSel([]); setExpiresIn("");
-    await refresh();
-  }
->>>>>>> fix/patch3h-apps-restore
-
-  async function setStatus(key: string, action: "approve"|"revoke") {
-    const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
-    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/status${qs}`, {
-      method: "POST",
-      headers: {"content-type":"application/json"},
-      body: JSON.stringify({ action })
-    });
-<<<<<<< HEAD
-    // refresh
+  async function refresh() {
+    const qs = org ? "?org=" + encodeURIComponent(org) : "";
     const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
     setApp(j);
   }
 
-  async function removeProduct(key: string, product: string) {
-    const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
-    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}${qs}`, { method: "DELETE" });
-    const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
-    setApp(j);
-=======
+  async function setStatus(key: string, action: "approve" | "revoke") {
+    const qs = org ? "?org=" + encodeURIComponent(org) : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/status${qs}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      }
+    );
     await refresh();
   }
 
   async function deleteKey(key: string) {
     if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}?org=${encodeURIComponent(org)}`, {
-      method: "DELETE",
-    });
+    const qs = org ? "?org=" + encodeURIComponent(org) : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}${qs}`,
+      { method: "DELETE" }
+    );
     await refresh();
   }
 
   async function addProduct(key: string, product: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/add?org=${encodeURIComponent(org)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiProduct: product }),
-    });
+    const qs = org ? "?org=" + encodeURIComponent(org) : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(
+        key
+      )}/products/add${qs}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apiProduct: product }),
+      }
+    );
     await refresh();
   }
 
   async function removeProduct(key: string, product: string) {
-    await fetchJson(`/api/apps/${encodeURIComponent(appId)}/credentials/${encodeURIComponent(key)}/products/${encodeURIComponent(product)}?org=${encodeURIComponent(org)}`, {
-      method: "DELETE",
-    });
+    const qs = org ? "?org=" + encodeURIComponent(org) : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(
+        key
+      )}/products/${encodeURIComponent(product)}${qs}`,
+      { method: "DELETE" }
+    );
     await refresh();
->>>>>>> fix/patch3h-apps-restore
   }
-
-  async function addProduct(key: string, product: string) {
-    const qs = org ? ("?org=" + encodeURIComponent(org)) : "";
-    await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/products/add${qs}`, {
-      method: "POST", headers: {"content-type":"application/json"},
-      body: JSON.stringify({ apiProduct: product })
-    });
-    const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
-    setApp(j);
-  }
-
-  const backHref = useMemo(()=>{
-    const u = new URL("/ui/apps", window.location.origin);
-    if (org) u.searchParams.set("org", org);
-    return u.toString().replace(window.location.origin, "");
-  }, [org]);
 
   return (
     <div className="p-6 space-y-6">
-<<<<<<< HEAD
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Gerenciar credenciais do App <span className="text-xs px-2 py-1 rounded-full border ml-2">v3c</span></h1>
-        <a href={backHref} className="px-3 py-1 rounded bg-yellow-400 text-black font-medium">← Voltar aos Apps</a>
+        <h1 className="text-2xl font-bold">
+          Gerenciar credenciais do App{" "}
+          <span className="text-xs px-2 py-1 rounded-full border ml-2">v3c</span>
+        </h1>
       </div>
 
       {loading && <div>Carregando…</div>}
       {err && <div className="text-red-600 whitespace-pre-wrap">Erro: {err}</div>}
-=======
-      <h1 className="text-2xl font-bold">Detalhes do App</h1>
-      {!org && <div className="text-sm text-zinc-600">Defina a <strong>org</strong> via URL (?org=...) para carregar.</div>}
-      {loading && <div>Carregando...</div>}
-      {error && <div className="text-red-600 whitespace-pre-wrap">Erro: {error}</div>}
 
->>>>>>> fix/patch3h-apps-restore
       {app && (
         <div className="space-y-6">
+          {/* cards superiores (nome, id, status) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
               <div className="text-xs text-zinc-500">Nome</div>
@@ -197,36 +161,27 @@ export default function AppManagePage() {
             </div>
             <div className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
               <div className="text-xs text-zinc-500">Status</div>
-              <div className="capitalize">{app.status}</div>
+              <div className="capitalize">{app.status || "-"}</div>
             </div>
           </div>
 
-<<<<<<< HEAD
-=======
-          <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900" id="new-cred">
-            <h2 className="text-lg font-semibold mb-3">Nova credencial</h2>
-            <div className="flex flex-col md:flex-row gap-3 items-start">
-              <select multiple value={createSel} onChange={(e) => {
-                const opts = Array.from(e.target.selectedOptions).map(o => o.value);
-                setCreateSel(opts);
-              }} className="border rounded p-2 min-w-[240px] h-32">
-                {products.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <input className="border rounded p-2" placeholder="keyExpiresIn (ms) opcional" value={expiresIn} onChange={e=>setExpiresIn(e.target.value)} />
-              <button className="px-3 py-2 rounded bg-black text-white" onClick={createCredential}>Criar</button>
-            </div>
-          </section>
-
->>>>>>> fix/patch3h-apps-restore
+          {/* credenciais */}
           <section className="p-4 rounded-2xl shadow bg-white dark:bg-zinc-900">
-            <h2 className="text-lg font-semibold mb-3">Credenciais</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Credenciais</h2>
+              {/* removemos “Nova credencial” como combinado */}
+            </div>
+
+            {(app.credentials || []).length === 0 && (
+              <div className="text-sm text-zinc-500">
+                Este app não possui credenciais ativas.
+              </div>
+            )}
+
             <div className="space-y-4">
               {(app.credentials || []).map((c) => {
-<<<<<<< HEAD
-                const notAssoc = []; // products list opcional removida por ora
-=======
-                const notAssoc = products.filter(p => !(c.apiProducts || []).some(x => x.apiproduct === p));
->>>>>>> fix/patch3h-apps-restore
+                const current = new Set((c.apiProducts || []).map((p) => p.apiproduct));
+                const notAssoc = products.filter((p) => !current.has(p));
                 return (
                   <div key={c.consumerKey} className="border rounded-xl p-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
@@ -236,44 +191,97 @@ export default function AppManagePage() {
                       </div>
                       <div>
                         <div className="text-xs text-zinc-500">Secret</div>
-                        <div className="font-mono text-sm break-all">{c.consumerSecret || "-"}</div>
+                        <div className="font-mono text-sm break-all">
+                          {c.consumerSecret || "-"}
+                        </div>
                       </div>
                       <div>
                         <div className="text-xs text-zinc-500">Status</div>
-                        <div className="capitalize">{c.status}</div>
+                        <div className="capitalize">{c.status || "-"}</div>
                       </div>
                       <div className="flex gap-2">
-                        <button className="px-3 py-1 rounded bg-emerald-600 text-white" onClick={()=>setStatus(c.consumerKey, "approve")}>Aprovar</button>
-                        <button className="px-3 py-1 rounded bg-amber-600 text-white" onClick={()=>setStatus(c.consumerKey, "revoke")}>Revogar</button>
+                        <button
+                          className="px-3 py-1 rounded bg-emerald-600 text-white"
+                          onClick={() => setStatus(c.consumerKey, "approve")}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          className="px-3 py-1 rounded bg-amber-600 text-white"
+                          onClick={() => setStatus(c.consumerKey, "revoke")}
+                        >
+                          Revogar
+                        </button>
+                        <button
+                          className="px-3 py-1 rounded bg-rose-600 text-white"
+                          onClick={() => deleteKey(c.consumerKey)}
+                        >
+                          Excluir
+                        </button>
                       </div>
                     </div>
 
                     <div className="mt-3">
-                      <div className="text-xs text-zinc-500 mb-1">Products associados</div>
+                      <div className="text-xs text-zinc-500 mb-1">
+                        Products associados
+                      </div>
                       <div className="flex flex-wrap gap-2">
-                        {(c.apiProducts||[]).map(p => (
-                          <span key={p.apiproduct} className="inline-flex items-center gap-2 border rounded-full px-2 py-1 text-sm">
+                        {(c.apiProducts || []).map((p) => (
+                          <span
+                            key={p.apiproduct}
+                            className="inline-flex items-center gap-2 border rounded-full px-2 py-1 text-sm"
+                          >
                             {p.apiproduct}
-                            <button className="text-rose-600" title="remover" onClick={()=>removeProduct(c.consumerKey, p.apiproduct!)}>×</button>
+                            <button
+                              className="text-rose-600"
+                              title="remover"
+                              onClick={() => removeProduct(c.consumerKey, p.apiproduct)}
+                            >
+                              ×
+                            </button>
                           </span>
                         ))}
                       </div>
-                      {/* Adicionar product (lista de products carregada na tela de Apps) poderia ser integrada depois */}
+
                       <div className="mt-2 flex gap-2 items-center">
-                        <input className="border rounded p-1" placeholder="digite o product exato…" id={`add-${c.consumerKey}`} />
-                        <button className="px-2 py-1 rounded bg-indigo-600 text-white" onClick={()=>{
-                          const inp = document.getElementById(`add-${c.consumerKey}`) as HTMLInputElement | null;
-                          const val = inp?.value?.trim() || "";
-                          if (val) addProduct(c.consumerKey, val);
-                        }}>Adicionar</button>
+                        <select className="border rounded p-1" defaultValue="">
+                          <option value="" disabled>
+                            Adicionar product…
+                          </option>
+                          {notAssoc.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="px-2 py-1 rounded bg-indigo-600 text-white"
+                          onClick={(e) => {
+                            const sel = e.currentTarget
+                              .previousSibling as HTMLSelectElement | null;
+                            const val = sel?.value || "";
+                            if (val) addProduct(c.consumerKey, val);
+                          }}
+                        >
+                          Adicionar
+                        </button>
                       </div>
                     </div>
                   </div>
                 );
               })}
-              {(app.credentials||[]).length===0 && <div className="text-sm opacity-70">Nenhuma credencial para este app.</div>}
             </div>
           </section>
+
+          {/* voltar ao app (link simples no final, como você pediu) */}
+          <div className="pt-2">
+            <a
+              className="inline-flex items-center px-3 py-2 rounded bg-zinc-800 text-white hover:bg-zinc-700"
+              href={`/ui/apps/${encodeURIComponent(appIdStr)}?org=${encodeURIComponent(org)}`}
+            >
+              Voltar ao App
+            </a>
+          </div>
         </div>
       )}
     </div>
