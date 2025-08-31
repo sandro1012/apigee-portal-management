@@ -33,17 +33,16 @@ export default function AppManageV3() {
   const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
-
   const appIdStr = String(appId || "");
+
   const [app, setApp] = useState<DevApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
 
   const [products, setProducts] = useState<string[]>([]); // todos os products do org
 
-  const ACCENT = "#facc15"; // amarelo (Tailwind amber-400)
+  const AMBER = "#facc15"; // borda/chips
 
-  // carrega detalhes do app e lista de products do org
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -53,7 +52,6 @@ export default function AppManageV3() {
         const detail = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
         setApp(detail);
 
-        // products do org (robusto, já existente na sua API)
         const pr = await fetchJson(`/api/products${qs}`);
         const names: string[] =
           Array.isArray(pr) ? pr.map((p: any) => p.name || p.displayName || "").filter(Boolean)
@@ -147,97 +145,61 @@ export default function AppManageV3() {
     }
   }
 
-  // UI helpers
-  const cardStyle: React.CSSProperties = {
-    border: `2px solid ${ACCENT}`,
+  // estilos mínimos para manter o tema existente (sem fundo branco)
+  const card: React.CSSProperties = {
+    border: `2px solid ${AMBER}`,
     borderRadius: 14,
     padding: 16,
-    background: "var(--card-bg, #fff)",
-  };
-
-  const thStyle: React.CSSProperties = {
-    textAlign: "left",
-    padding: "6px 8px",
-    fontSize: 12,
-    color: "#6b7280", // zinc-500
-    whiteSpace: "nowrap",
-  };
-
-  const tdStyle: React.CSSProperties = {
-    padding: "6px 8px",
-    verticalAlign: "top",
-    wordBreak: "break-word",
-  };
-
-  const btn: React.CSSProperties = {
-    padding: "8px 12px",
-    borderRadius: 10,
-    fontWeight: 600,
-    border: "1px solid #111",
-    background: "#111",
-    color: "#fff",
-    cursor: "pointer",
-  };
-
-  const btnWarn: React.CSSProperties = { ...btn, background: "#f59e0b", borderColor: "#f59e0b" }; // amber-500
-  const btnDanger: React.CSSProperties = { ...btn, background: "#dc2626", borderColor: "#dc2626" }; // red-600
-  const btnGhost: React.CSSProperties = {
-    padding: "8px 12px",
-    borderRadius: 10,
-    fontWeight: 600,
-    border: `1px solid ${ACCENT}`,
-    color: "#111",
     background: "transparent",
-    cursor: "pointer",
+  };
+  const th: React.CSSProperties = { textAlign: "left", padding: "6px 8px", fontSize: 12, whiteSpace: "nowrap" };
+  const td: React.CSSProperties = { padding: "6px 8px", verticalAlign: "top", wordBreak: "break-word" };
+
+  // botão “padrão do site”: sem estilos de cor (deixa o globals.css aplicar)
+  const button: React.CSSProperties = { padding: "8px 12px", borderRadius: 10, fontWeight: 600, cursor: "pointer" };
+
+  const chip: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    border: `1px solid ${AMBER}`,
+    borderRadius: 999,
+    padding: "2px 10px",
+    fontSize: 13,
   };
 
-  const allCreds = useMemo(() => app?.credentials || [], [app]);
+  const creds = useMemo(() => app?.credentials || [], [app]);
 
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800 }}>Gerenciar credenciais do App</h1>
-        <span
-          style={{
-            fontSize: 12,
-            padding: "2px 8px",
-            borderRadius: 999,
-            border: "1px solid #d1d5db",
-          }}
-        >
+        <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid var(--border, #d1d5db)" }}>
           v3c+
         </span>
       </div>
 
       {loading && <div>Carregando…</div>}
-      {err && <div style={{ color: "#b91c1c", whiteSpace: "pre-wrap" }}>Erro: {err}</div>}
+      {err && <div style={{ whiteSpace: "pre-wrap" }}>Erro: {err}</div>}
 
       {app && (
         <div style={{ display: "grid", gap: 16 }}>
           {/* Detalhes do App */}
-          <section style={cardStyle}>
-            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 16, fontWeight: 700 }}>
-              App Details
-            </h2>
+          <section style={card}>
+            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 16, fontWeight: 700 }}>App Details</h2>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <tbody>
                 <tr>
-                  <th style={thStyle}>Status</th>
-                  <td style={tdStyle}>
-                    <span style={{ textTransform: "capitalize" }}>{app.status || "-"}</span>
-                  </td>
+                  <th style={th}>Status</th>
+                  <td style={td}><span style={{ textTransform: "capitalize" }}>{app.status || "-"}</span></td>
                 </tr>
                 <tr>
-                  <th style={thStyle}>Name</th>
-                  <td style={tdStyle}>
-                    <code>{app.name}</code>
-                  </td>
+                  <th style={th}>Name</th>
+                  <td style={td}><code>{app.name}</code></td>
                 </tr>
                 <tr>
-                  <th style={thStyle}>App ID</th>
-                  <td style={tdStyle}>
-                    <code>{app.appId}</code>
-                  </td>
+                  <th style={th}>App ID</th>
+                  <td style={td}><code>{app.appId}</code></td>
                 </tr>
               </tbody>
             </table>
@@ -246,68 +208,42 @@ export default function AppManageV3() {
           {/* Credenciais */}
           <section style={{ display: "grid", gap: 12 }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Credenciais</h2>
-            {allCreds.length === 0 && (
-              <div style={{ opacity: 0.7, fontSize: 14 }}>
+            {creds.length === 0 && (
+              <div style={{ opacity: 0.8, fontSize: 14 }}>
                 Este app ainda não possui credenciais.
               </div>
             )}
 
-            {allCreds.map((c) => {
+            {creds.map((c) => {
               const currentProducts = (c.apiProducts || []).map((x) => x.apiproduct);
               const notAssoc = products.filter((p) => !currentProducts.includes(p));
               return (
-                <div key={c.consumerKey} style={cardStyle}>
+                <div key={c.consumerKey} style={card}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <tbody>
                       <tr>
-                        <th style={thStyle}>Key</th>
-                        <td style={tdStyle}>
-                          <code style={{ wordBreak: "break-all" }}>{c.consumerKey}</code>
-                        </td>
+                        <th style={th}>Key</th>
+                        <td style={td}><code style={{ wordBreak: "break-all" }}>{c.consumerKey}</code></td>
                       </tr>
                       <tr>
-                        <th style={thStyle}>Secret</th>
-                        <td style={tdStyle}>
-                          <code style={{ wordBreak: "break-all" }}>
-                            {c.consumerSecret || "-"}
-                          </code>
-                        </td>
+                        <th style={th}>Secret</th>
+                        <td style={td}><code style={{ wordBreak: "break-all" }}>{c.consumerSecret || "-"}</code></td>
                       </tr>
                       <tr>
-                        <th style={thStyle}>Status</th>
-                        <td style={tdStyle}>
-                          <span style={{ textTransform: "capitalize" }}>{c.status || "-"}</span>
-                        </td>
+                        <th style={th}>Status</th>
+                        <td style={td}><span style={{ textTransform: "capitalize" }}>{c.status || "-"}</span></td>
                       </tr>
                       <tr>
-                        <th style={thStyle}>Products</th>
-                        <td style={tdStyle}>
+                        <th style={th}>Products</th>
+                        <td style={td}>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                             {currentProducts.map((p) => (
-                              <span
-                                key={p}
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  border: `1px solid ${ACCENT}`,
-                                  borderRadius: 999,
-                                  padding: "2px 10px",
-                                  fontSize: 13,
-                                  background: "#FFFBEB", // amber-50
-                                }}
-                              >
+                              <span key={p} style={chip}>
                                 {p}
                                 <button
                                   title="remover"
                                   onClick={() => removeProduct(c.consumerKey, p)}
-                                  style={{
-                                    border: "none",
-                                    background: "transparent",
-                                    color: "#b91c1c",
-                                    cursor: "pointer",
-                                    fontWeight: 800,
-                                  }}
+                                  style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 800 }}
                                 >
                                   ×
                                 </button>
@@ -315,45 +251,25 @@ export default function AppManageV3() {
                             ))}
                           </div>
 
-                          {/* Adicionar product */}
                           {notAssoc.length > 0 && (
-                            <div
-                              style={{
-                                display: "flex",
-                                gap: 8,
-                                alignItems: "center",
-                                marginTop: 10,
-                              }}
-                            >
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
                               <select
                                 defaultValue=""
-                                style={{
-                                  border: "1px solid #d1d5db",
-                                  borderRadius: 8,
-                                  padding: "6px 8px",
-                                  minWidth: 220,
-                                }}
+                                style={{ border: "1px solid var(--border, #d1d5db)", borderRadius: 8, padding: "6px 8px", minWidth: 220 }}
                                 onChange={(e) => {
                                   const val = e.target.value;
                                   if (val) {
                                     addProduct(c.consumerKey, val);
-                                    // reseta o select
                                     e.currentTarget.value = "";
                                   }
                                 }}
                               >
-                                <option value="" disabled>
-                                  Adicionar product…
-                                </option>
+                                <option value="" disabled>Adicionar product…</option>
                                 {notAssoc.map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
+                                  <option key={p} value={p}>{p}</option>
                                 ))}
                               </select>
-                              <span style={{ fontSize: 12, opacity: 0.75 }}>
-                                Selecione para associar imediatamente
-                              </span>
+                              <span style={{ fontSize: 12, opacity: 0.8 }}>Selecione para associar imediatamente</span>
                             </div>
                           )}
                         </td>
@@ -361,26 +277,10 @@ export default function AppManageV3() {
                     </tbody>
                   </table>
 
-                  {/* Ações */}
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      flexWrap: "wrap",
-                      marginTop: 12,
-                      borderTop: "1px dashed #e5e7eb",
-                      paddingTop: 10,
-                    }}
-                  >
-                    <button style={btn} onClick={() => setStatus(c.consumerKey, "approve")}>
-                      Aprovar
-                    </button>
-                    <button style={btnWarn} onClick={() => setStatus(c.consumerKey, "revoke")}>
-                      Revogar
-                    </button>
-                    <button style={btnDanger} onClick={() => deleteKey(c.consumerKey)}>
-                      Excluir
-                    </button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, borderTop: "1px dashed var(--border, #e5e7eb)", paddingTop: 10 }}>
+                    <button style={button} onClick={() => setStatus(c.consumerKey, "approve")}>Aprovar</button>
+                    <button style={button} onClick={() => setStatus(c.consumerKey, "revoke")}>Revogar</button>
+                    <button style={button} onClick={() => deleteKey(c.consumerKey)}>Excluir</button>
                   </div>
                 </div>
               );
@@ -389,9 +289,7 @@ export default function AppManageV3() {
 
           {/* Rodapé: Voltar */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-            <button style={btnGhost} onClick={backToList}>
-              Voltar para lista de Apps
-            </button>
+            <button style={button} onClick={backToList}>Voltar para lista de Apps</button>
           </div>
         </div>
       )}
