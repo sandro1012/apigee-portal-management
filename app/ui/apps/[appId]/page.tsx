@@ -241,12 +241,19 @@ export default function AppManageV3() {
                               <span key={p} style={chip}>
                                 {p}
                                 <button
-                                  title="remover"
-                                  onClick={() => removeProduct(c.consumerKey, p)}
-                                  style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 800 }}
-                                >
-                                  ×
-                                </button>
+                                  <button
+									  title="remover"
+									  onClick={() => removeProduct(c.consumerKey, p)}
+									  style={{
+										border: "none",
+										background: "transparent",
+										cursor: "pointer",
+										fontWeight: 800,
+										color: "#ef4444" // vermelho visível no fundo escuro
+									  }}
+									>
+									  ×
+									</button>
                               </span>
                             ))}
                           </div>

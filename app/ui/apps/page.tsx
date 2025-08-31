@@ -161,43 +161,65 @@ export default function AppsPage() {
           </div>
         </div>
 
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Detalhes do App</h3>
-          {!selected && <div className="small" style={{ opacity: .8 }}>Selecione um app na lista para ver detalhes.</div>}
-          {selected && (
-            <div style={{ display: "grid", gap: 8 }}>
-              <div><b>Nome:</b> {selected.name}</div>
-              {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
-              {selected.status && <div><b>Status:</b> {selected.status}</div>}
+        {/* Painel de detalhes à direita */}
+<div className="card">
+  <h3 style={{marginTop:0}}>Detalhes do App</h3>
+  {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
+  {selected && (
+    <div style={{display:'grid', gap:8}}>
+      <div><b>Nome:</b> {selected.name}</div>
+      {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
+      {selected.status && <div><b>Status:</b> {selected.status}</div>}
 
-              {selected.attributes && selected.attributes.length > 0 && (
-                <div>
-                  <b>Atributos</b>
-                  <ul>{selected.attributes.map((at, i) => (<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
-                </div>
-              )}
-
-              {selected.apiProducts && selected.apiProducts.length > 0 && (
-                <div>
-                  <b>Products associados</b>
-                  <ul>{selected.apiProducts.map((p, i) => (<li key={i}>{p}</li>))}</ul>
-                </div>
-              )}
-
-              {selected.appId && (
-                <div style={{ marginTop: 8 }}>
-                  <a
-                    className="btn"
-                    href={`/ui/apps/${encodeURIComponent(selected.appId)}?org=${encodeURIComponent(org)}&manage=1`}
-                    title="Abrir a gestão completa deste App"
-                  >
-                    Gerenciar (credenciais e products)
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
+      {selected.attributes && selected.attributes.length>0 && (
+        <div>
+          <b>Atributos</b>
+          <ul>{selected.attributes.map((at,i)=>(<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
         </div>
+      )}
+
+      {selected.apiProducts && selected.apiProducts.length>0 && (
+        <div>
+          <b>Products associados</b>
+          <ul>{selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}</ul>
+        </div>
+      )}
+
+      {selected.credentials && selected.credentials.length>0 && (
+        <div>
+          <b>Credenciais</b>
+          <ul>
+            {selected.credentials.map((c,i)=>(
+              <li key={i} style={{marginBottom:6}}>
+                <div><code>Key:</code> {c.consumerKey}</div>
+                {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                <div className="small"><b>Status:</b> {c.status || '-'}</div>
+                {c.apiProducts && c.apiProducts.length>0 && (
+                  <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Botão GERENCIAR com o mesmo visual dos outros botões (usa <button> simples) */}
+      {selected.appId && (
+        <div style={{display:'flex', justifyContent:'flex-end', marginTop:8}}>
+          <button
+            onClick={()=>{
+              const orgParam = org ? `?org=${encodeURIComponent(org)}` : "";
+              window.location.href = `/ui/apps/${encodeURIComponent(selected.appId)}${orgParam}`;
+            }}
+            title="Gerenciar credenciais e products"
+          >
+            Gerenciar (credenciais e products)
+          </button>
+        </div>
+      )}
+    </div>
+  )}
+</div>
       </div>
     </main>
   );
