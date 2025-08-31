@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useParams, useRouter } from "next/navigation";
 
@@ -9,7 +8,6 @@ type Credential = {
   status?: string;
   apiProducts?: { apiproduct: string; status?: string }[];
 };
-
 type DevApp = {
   name: string;
   appId?: string;
@@ -17,6 +15,7 @@ type DevApp = {
   developerEmail?: string;
   status?: string;
   attributes?: { name: string; value: string }[];
+  apiProducts?: string[];
   credentials?: Credential[];
 };
 
@@ -28,20 +27,29 @@ async function fetchJson(url: string, init?: RequestInit) {
   return j;
 }
 
-export default function AppManageV3() {
-  const router = useRouter();
+function classBtnPrimary() {
+  return "inline-flex items-center gap-2 px-3 py-2 rounded-md bg-yellow-400 hover:bg-yellow-500 text-black font-medium";
+}
+function classBtnGhost() {
+  return "inline-flex items-center gap-2 px-3 py-2 rounded-md border border-yellow-400 text-yellow-400 hover:bg-yellow-400/10";
+}
+function classTag() {
+  return "inline-flex items-center gap-2 border rounded-full px-2 py-1 text-sm";
+}
+
+export default function AppCredManagePage() {
   const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
   const org = search.get("org") || "";
-  const appIdStr = String(appId || "");
+  const router = useRouter();
 
+  const appIdStr = String(appId || "");
   const [app, setApp] = useState<DevApp | null>(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>("");
+  const [err, setErr] = useState("");
 
-  const [products, setProducts] = useState<string[]>([]); // todos os products do org
-
-  const AMBER = "#facc15"; // borda/chips
+  // lista de products p/ combos (usar no “adicionar product”)
+  const [products, setProducts] = useState<string[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -52,13 +60,19 @@ export default function AppManageV3() {
         const detail = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
         setApp(detail);
 
-        const pr = await fetchJson(`/api/products${qs}`);
-        const names: string[] =
-          Array.isArray(pr) ? pr.map((p: any) => p.name || p.displayName || "").filter(Boolean)
-          : Array.isArray(pr.apiProduct) ? pr.apiProduct.map((p: any) => p.name).filter(Boolean)
-          : Array.isArray(pr.names) ? pr.names
-          : [];
-        setProducts(names);
+        // tentar carregar products (não bloqueia a tela se falhar)
+        try {
+          const pr = await fetchJson(`/api/products${qs}`);
+          const names: string[] = Array.isArray(pr)
+            ? pr.map((x: any) => x?.name || x?.displayName).filter(Boolean)
+            : (pr?.names || pr?.apiProduct || []);
+          setProducts(
+            (names || [])
+              .map((n: any) => String(n))
+              .filter((v: string, i: number, a: string[]) => v && a.indexOf(v) === i)
+              .sort((a: string, b: string) => a.localeCompare(b))
+          );
+        } catch {}
       } catch (e: any) {
         setErr(e.message || String(e));
       } finally {
@@ -68,235 +82,225 @@ export default function AppManageV3() {
     if (appIdStr) load();
   }, [appIdStr, org]);
 
-  const backToList = () => {
-    const url = "/ui/apps" + (org ? `?org=${encodeURIComponent(org)}` : "");
-    router.push(url);
-  };
-
-  const refresh = async () => {
+  // refresh helper
+  async function refresh() {
     const qs = org ? `?org=${encodeURIComponent(org)}` : "";
-    const detail = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
-    setApp(detail);
-  };
+    const j = await fetchJson(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
+    setApp(j);
+  }
 
   async function setStatus(key: string, action: "approve" | "revoke") {
-    try {
-      const qs = org ? `?org=${encodeURIComponent(org)}` : "";
-      await fetchJson(
-        `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/status${qs}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action }),
-        }
-      );
-      await refresh();
-    } catch (e: any) {
-      alert(`Falha ao ${action === "approve" ? "aprovar" : "revogar"}: ${e.message || e}`);
-    }
+    const qs = org ? `?org=${encodeURIComponent(org)}` : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}/status${qs}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      }
+    );
+    await refresh();
   }
 
   async function deleteKey(key: string) {
     if (!confirm("Tem certeza que deseja excluir esta credencial?")) return;
-    try {
-      const qs = org ? `?org=${encodeURIComponent(org)}` : "";
-      await fetchJson(
-        `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}${qs}`,
-        { method: "DELETE" }
-      );
-      await refresh();
-    } catch (e: any) {
-      alert(`Falha ao excluir: ${e.message || e}`);
-    }
+    const qs = org ? `?org=${encodeURIComponent(org)}` : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(key)}${qs}`,
+      { method: "DELETE" }
+    );
+    await refresh();
   }
 
   async function addProduct(key: string, product: string) {
-    if (!product) return;
-    try {
-      const qs = org ? `?org=${encodeURIComponent(org)}` : "";
-      await fetchJson(
-        `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(
-          key
-        )}/products/add${qs}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ apiProduct: product }),
-        }
-      );
-      await refresh();
-    } catch (e: any) {
-      alert(`Falha ao adicionar product: ${e.message || e}`);
-    }
+    const qs = org ? `?org=${encodeURIComponent(org)}` : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(
+        key
+      )}/products/add${qs}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apiProduct: product }),
+      }
+    );
+    await refresh();
   }
 
   async function removeProduct(key: string, product: string) {
-    try {
-      const qs = org ? `?org=${encodeURIComponent(org)}` : "";
-      await fetchJson(
-        `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(
-          key
-        )}/products/${encodeURIComponent(product)}${qs}`,
-        { method: "DELETE" }
-      );
-      await refresh();
-    } catch (e: any) {
-      alert(`Falha ao remover product: ${e.message || e}`);
-    }
+    const qs = org ? `?org=${encodeURIComponent(org)}` : "";
+    await fetchJson(
+      `/api/apps/${encodeURIComponent(appIdStr)}/credentials/${encodeURIComponent(
+        key
+      )}/products/${encodeURIComponent(product)}${qs}`,
+      { method: "DELETE" }
+    );
+    await refresh();
   }
-
-  // estilos mínimos para manter o tema existente (sem fundo branco)
-  const card: React.CSSProperties = {
-    border: `2px solid ${AMBER}`,
-    borderRadius: 14,
-    padding: 16,
-    background: "transparent",
-  };
-  const th: React.CSSProperties = { textAlign: "left", padding: "6px 8px", fontSize: 12, whiteSpace: "nowrap" };
-  const td: React.CSSProperties = { padding: "6px 8px", verticalAlign: "top", wordBreak: "break-word" };
-
-  // botão “padrão do site”: sem estilos de cor (deixa o globals.css aplicar)
-  const button: React.CSSProperties = { padding: "8px 12px", borderRadius: 10, fontWeight: 600, cursor: "pointer" };
-
-  const chip: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    border: `1px solid ${AMBER}`,
-    borderRadius: 999,
-    padding: "2px 10px",
-    fontSize: 13,
-  };
 
   const creds = useMemo(() => app?.credentials || [], [app]);
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800 }}>Gerenciar credenciais do App</h1>
-        <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid var(--border, #d1d5db)" }}>
-          v3c+
-        </span>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">
+          Gerenciar credenciais do App{" "}
+          <span className="text-xs px-2 py-1 rounded-full border ml-2">v3c</span>
+        </h1>
+        <div className="flex items-center gap-2">
+          {/* Voltar para a lista de Apps */}
+          <a
+            className={classBtnGhost()}
+            href={`/ui/apps${org ? `?org=${encodeURIComponent(org)}` : ""}`}
+          >
+            Voltar para lista de Apps
+          </a>
+        </div>
       </div>
 
       {loading && <div>Carregando…</div>}
-      {err && <div style={{ whiteSpace: "pre-wrap" }}>Erro: {err}</div>}
+      {err && <div className="text-red-500 whitespace-pre-wrap">Erro: {err}</div>}
 
       {app && (
-        <div style={{ display: "grid", gap: 16 }}>
-          {/* Detalhes do App */}
-          <section style={card}>
-            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 16, fontWeight: 700 }}>App Details</h2>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <tbody>
-                <tr>
-                  <th style={th}>Status</th>
-                  <td style={td}><span style={{ textTransform: "capitalize" }}>{app.status || "-"}</span></td>
-                </tr>
-                <tr>
-                  <th style={th}>Name</th>
-                  <td style={td}><code>{app.name}</code></td>
-                </tr>
-                <tr>
-                  <th style={th}>App ID</th>
-                  <td style={td}><code>{app.appId}</code></td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+          {/* Coluna 1: Dados do App */}
+          <div className="rounded-2xl border border-yellow-500/40 p-4">
+            <h2 className="font-semibold mb-3">App</h2>
+            <div className="grid grid-cols-1 gap-2 text-sm">
+              <div>
+                <div className="text-xs opacity-70">Nome</div>
+                <div className="font-mono break-all">{app.name}</div>
+              </div>
+              <div>
+                <div className="text-xs opacity-70">App ID</div>
+                <div className="font-mono break-all">{app.appId || "-"}</div>
+              </div>
+              <div>
+                <div className="text-xs opacity-70">Status</div>
+                <div className="capitalize">{app.status || "-"}</div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <a
+                className={classBtnPrimary()}
+                href={`/ui/apps/${encodeURIComponent(appIdStr)}${
+                  org ? `?org=${encodeURIComponent(org)}&manage=1` : "?manage=1"
+                }`}
+              >
+                Gerenciar (credenciais e products)
+              </a>
+            </div>
+          </div>
 
-          {/* Credenciais */}
-          <section style={{ display: "grid", gap: 12 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Credenciais</h2>
+          {/* Coluna 2-3: Credenciais */}
+          <div className="lg:col-span-2 rounded-2xl border border-yellow-500/40 p-4">
+            <h2 className="font-semibold mb-3">Credenciais</h2>
+
             {creds.length === 0 && (
-              <div style={{ opacity: 0.8, fontSize: 14 }}>
-                Este app ainda não possui credenciais.
+              <div className="text-sm opacity-70">
+                Este app não possui credenciais no momento.
               </div>
             )}
 
-            {creds.map((c) => {
-              const currentProducts = (c.apiProducts || []).map((x) => x.apiproduct);
-              const notAssoc = products.filter((p) => !currentProducts.includes(p));
-              return (
-                <div key={c.consumerKey} style={card}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <tbody>
-                      <tr>
-                        <th style={th}>Key</th>
-                        <td style={td}><code style={{ wordBreak: "break-all" }}>{c.consumerKey}</code></td>
-                      </tr>
-                      <tr>
-                        <th style={th}>Secret</th>
-                        <td style={td}><code style={{ wordBreak: "break-all" }}>{c.consumerSecret || "-"}</code></td>
-                      </tr>
-                      <tr>
-                        <th style={th}>Status</th>
-                        <td style={td}><span style={{ textTransform: "capitalize" }}>{c.status || "-"}</span></td>
-                      </tr>
-                      <tr>
-                        <th style={th}>Products</th>
-                        <td style={td}>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                            {currentProducts.map((p) => (
-                              <span key={p} style={chip}>
-                                {p}
-                                <button
-                                  <button
-									  title="remover"
-									  onClick={() => removeProduct(c.consumerKey, p)}
-									  style={{
-										border: "none",
-										background: "transparent",
-										cursor: "pointer",
-										fontWeight: 800,
-										color: "#ef4444" // vermelho visível no fundo escuro
-									  }}
-									>
-									  ×
-									</button>
-                              </span>
-                            ))}
-                          </div>
+            <div className="space-y-4">
+              {creds.map((c) => {
+                const notAssoc = products.filter(
+                  (p) => !(c.apiProducts || []).some((x) => x.apiproduct === p)
+                );
 
-                          {notAssoc.length > 0 && (
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
-                              <select
-                                defaultValue=""
-                                style={{ border: "1px solid var(--border, #d1d5db)", borderRadius: 8, padding: "6px 8px", minWidth: 220 }}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val) {
-                                    addProduct(c.consumerKey, val);
-                                    e.currentTarget.value = "";
-                                  }
-                                }}
-                              >
-                                <option value="" disabled>Adicionar product…</option>
-                                {notAssoc.map((p) => (
-                                  <option key={p} value={p}>{p}</option>
-                                ))}
-                              </select>
-                              <span style={{ fontSize: 12, opacity: 0.8 }}>Selecione para associar imediatamente</span>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                return (
+                  <div key={c.consumerKey} className="rounded-xl border p-3">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <div className="text-xs opacity-70">Key</div>
+                        <div className="font-mono text-sm break-all">{c.consumerKey}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs opacity-70">Secret</div>
+                        <div className="font-mono text-sm break-all">
+                          {c.consumerSecret || "-"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs opacity-70">Status</div>
+                        <div className="capitalize">{c.status || "-"}</div>
+                      </div>
+                      <div className="flex gap-2 items-start">
+                        <button
+                          className={classBtnPrimary()}
+                          onClick={() => setStatus(c.consumerKey, "approve")}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          className={classBtnGhost()}
+                          onClick={() => setStatus(c.consumerKey, "revoke")}
+                        >
+                          Revogar
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white"
+                          onClick={() => deleteKey(c.consumerKey)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, borderTop: "1px dashed var(--border, #e5e7eb)", paddingTop: 10 }}>
-                    <button style={button} onClick={() => setStatus(c.consumerKey, "approve")}>Aprovar</button>
-                    <button style={button} onClick={() => setStatus(c.consumerKey, "revoke")}>Revogar</button>
-                    <button style={button} onClick={() => deleteKey(c.consumerKey)}>Excluir</button>
+                    <div className="mt-3">
+                      <div className="text-xs opacity-70 mb-1">Products associados</div>
+                      <div className="flex flex-wrap gap-2">
+                        {(c.apiProducts || []).map((p) => (
+                          <span key={p.apiproduct} className={classTag()}>
+                            {p.apiproduct}
+                            <button
+                              className="text-rose-500"
+                              title="remover"
+                              onClick={() => removeProduct(c.consumerKey, p.apiproduct!)}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex gap-2 items-center">
+                        <select className="border rounded p-1" defaultValue="">
+                          <option value="" disabled>
+                            Adicionar product…
+                          </option>
+                          {notAssoc.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className={classBtnPrimary()}
+                          onClick={(e) => {
+                            const sel = (e.currentTarget
+                              .previousSibling as HTMLSelectElement)!;
+                            const val = sel?.value || "";
+                            if (val) addProduct(c.consumerKey, val);
+                          }}
+                        >
+                          Adicionar
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </section>
+                );
+              })}
+            </div>
+          </div>
 
-          {/* Rodapé: Voltar */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-            <button style={button} onClick={backToList}>Voltar para lista de Apps</button>
+          {/* Rodapé com voltar */}
+          <div className="lg:col-span-3">
+            <a
+              className={classBtnGhost()}
+              href={`/ui/apps${org ? `?org=${encodeURIComponent(org)}` : ""}`}
+            >
+              Voltar para lista de Apps
+            </a>
           </div>
         </div>
       )}
