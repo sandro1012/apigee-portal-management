@@ -1,5 +1,5 @@
 ﻿import { NextResponse } from "next/server";
-import { resolveApp as resolveDevAndApp, readBearer, buildKeyUrls } from "../../../../../../../lib/util/resolveApp";
+import { resolveApp as resolveDevAndApp, readBearer, buildKeyUrls } from "../../../../../../lib/util/resolveApp";
 
 export async function POST(req: Request, { params }: { params: { appId: string, consumerKey: string } }) {
   try {
