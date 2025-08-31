@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  resolveApp as resolveDevAndApp,
+  resolveApp,
   readBearer,
   buildKeyUrls
 } from "../../../../../../../lib/util/resolveApp";
-
 
 export async function DELETE(req: Request, { params }: { params: { appId: string, consumerKey: string, product: string } }) {
   try {

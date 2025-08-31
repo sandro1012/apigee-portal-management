@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import {
-  resolveApp as resolveDevAndApp,
+  resolveApp,
   readBearer,
   buildKeyUrls
 } from "../../../../../../../lib/util/resolveApp";
