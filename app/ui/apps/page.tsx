@@ -44,30 +44,72 @@ export default function AppsPage() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
 
-  // --- UI: Novo/Excluir App ---
-  const [showNew, setShowNew] = useState(false);
-  const [showDel, setShowDel] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const [newType, setNewType] = useState<"developer" | "company">("developer");
-  const [newName, setNewName] = useState("");
+  // === (1) ESTADOS + HELPERS para NOVO APP (Developer) e EXCLUIR APP ===
   const [newDevEmail, setNewDevEmail] = useState("");
-  const [newCompany, setNewCompany] = useState("");
-  const [newAttrs, setNewAttrs] = useState(""); // chave=valor por linha
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newAttrs, setNewAttrs] = useState("clientId=Value\ncompanyId=Value");
+  const [creating, setCreating] = useState(false);
 
-  const [delAppId, setDelAppId] = useState("");
-
-  function parseAttrs(txt: string): { name: string; value: string }[] {
-    return txt
+  function parseAttrsText(txt: string): { name: string; value: string }[] {
+    return (txt || "")
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean)
       .map((line) => {
-        const [k, ...rest] = line.split("=");
-        return { name: k.trim(), value: rest.join("=").trim() };
-      });
+        const i = line.indexOf("=");
+        if (i === -1) return null;
+        return { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
+      })
+      .filter(Boolean) as { name: string; value: string }[];
   }
+
+  async function createApp() {
+    try {
+      if (!org) { alert("Selecione uma org"); return; }
+      if (!newDisplayName.trim()) { alert("Preencha o DisplayName"); return; }
+      if (!newDevEmail.trim()) { alert("Preencha o Developer email"); return; }
+
+      setCreating(true);
+      const attributes = parseAttrsText(newAttrs);
+      const res = await fetch("/api/apps/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          org,
+          name: newDisplayName.trim(),
+          devEmail: newDevEmail.trim(),
+          attributes,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(j.error || res.statusText); return; }
+
+      // recarrega a lista e limpa o formulário
+      await loadApps();
+      setNewDevEmail("");
+      setNewDisplayName("");
+      setNewAttrs("clientId=Value\ncompanyId=Value");
+      alert("App criado com sucesso.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function deleteSelectedApp() {
+    if (!selected) { alert("Selecione um app na lista primeiro."); return; }
+    if (!org) { alert("Selecione a org."); return; }
+    if (!selected.appId) { alert("App sem appId."); return; }
+    if (!confirm(`Excluir app "${selected.name}"? Esta ação não pode ser desfeita.`)) return;
+
+    const res = await fetch(`/api/apps/${encodeURIComponent(selected.appId)}?org=${encodeURIComponent(org)}`, { method: "DELETE" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { alert("Falha ao excluir app: " + (j.error || res.statusText)); return; }
+
+    await loadApps();
+    setSelected(null);
+    alert("App excluído com sucesso.");
+  }
+  // === FIM (1) ===
 
   useEffect(() => {
     fetch("/api/orgs").then(r => r.json()).then(setOrgs).catch(() => setOrgs([]));
@@ -103,60 +145,6 @@ export default function AppsPage() {
     if (!org) return;
     const j = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
     setSelected(j);
-  }
-
-  // --- actions: criar/excluir app ---
-  async function createApp() {
-    if (!org) { alert("Selecione a Org."); return; }
-    if (!newName.trim()) { alert("Informe o nome do App."); return; }
-    if (newType === "developer" && !newDevEmail.trim()) { alert("Informe o e-mail do developer."); return; }
-    if (newType === "company" && !newCompany.trim()) { alert("Informe o nome da company."); return; }
-
-    setCreating(true);
-    try {
-      const body:any = { org, name: newName.trim(), attributes: parseAttrs(newAttrs) };
-      if (newType === "developer") body.devEmail = newDevEmail.trim();
-      else body.companyName = newCompany.trim();
-
-      const r = await fetch("/api/apps/new", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const j = await r.json().catch(()=>({}));
-      if (!r.ok) throw new Error(j?.error || r.statusText);
-
-      setShowNew(false);
-      setNewName(""); setNewDevEmail(""); setNewCompany(""); setNewAttrs("");
-      await loadApps();
-      alert("App criado com sucesso!");
-    } catch (e:any) {
-      alert("Falha ao criar app: " + (e.message || String(e)));
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function deleteApp() {
-    if (!org) { alert("Selecione a Org."); return; }
-    if (!delAppId) { alert("Selecione um App para excluir."); return; }
-    if (!confirm("Tem certeza que deseja excluir este App? Esta ação é irreversível.")) return;
-
-    setDeleting(true);
-    try {
-      const url = `/api/apps/${encodeURIComponent(delAppId)}?org=${encodeURIComponent(org)}`;
-      const r = await fetch(url, { method: "DELETE" });
-      const j = await r.json().catch(()=>({}));
-      if (!r.ok) throw new Error(j?.error || r.statusText);
-      setShowDel(false);
-      setDelAppId("");
-      await loadApps();
-      alert("App excluído com sucesso!");
-    } catch (e:any) {
-      alert("Falha ao excluir app: " + (e.message || String(e)));
-    } finally {
-      setDeleting(false);
-    }
   }
 
   const filtered = useMemo(() => {
@@ -209,79 +197,23 @@ export default function AppsPage() {
         </div>
       </div>
 
-      {/* AÇÕES – NOVO / EXCLUIR */}
-      <div className="card" style={{display:'flex', gap:8, alignItems:'center', maxWidth:760, marginTop:8}}>
-        <button onClick={()=>setShowNew(true)}>Novo App</button>
-        <button onClick={()=>setShowDel(true)} disabled={items.length===0}>Excluir App</button>
+      {/* === (2) CARD NOVO APP (DEVELOPER) === */}
+      <div className="card" style={{ display: "grid", gap: 8, maxWidth: 760, marginTop: 12 }}>
+        <strong>Novo App (Developer)</strong>
+        <label>Developer email
+          <input placeholder="dev@empresa.com" value={newDevEmail} onChange={e=>setNewDevEmail(e.target.value)} />
+        </label>
+        <label>DisplayName (obrigatório)
+          <input placeholder="Nome do App" value={newDisplayName} onChange={e=>setNewDisplayName(e.target.value)} />
+        </label>
+        <label>Atributos (opcional) — um por linha no formato <code>chave=valor</code>. Exemplo abaixo:
+          <textarea rows={3} value={newAttrs} onChange={e=>setNewAttrs(e.target.value)} />
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={createApp} disabled={!org || creating}>{creating ? "Criando..." : "Criar App"}</button>
+        </div>
       </div>
-
-      {/* Drawer: Novo App */}
-      {showNew && (
-        <div className="card" style={{display:'grid', gap:8, maxWidth:760, border:'1px solid var(--border)'}}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <strong>Criar novo App</strong>
-            <button onClick={()=>setShowNew(false)}>Fechar</button>
-          </div>
-
-          <label style={{display:'flex', gap:8, alignItems:'center'}}>
-            Tipo:
-            <select value={newType} onChange={e=>setNewType(e.target.value as any)}>
-              <option value="developer">Developer App</option>
-              <option value="company">Company App</option>
-            </select>
-          </label>
-
-          <label>Nome do App
-            <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="MeuApp" />
-          </label>
-
-          {newType === "developer" && (
-            <label>Developer e-mail
-              <input value={newDevEmail} onChange={e=>setNewDevEmail(e.target.value)} placeholder="usuario@dominio.com" />
-            </label>
-          )}
-          {newType === "company" && (
-            <label>Company name
-              <input value={newCompany} onChange={e=>setNewCompany(e.target.value)} placeholder="MinhaCompany" />
-            </label>
-          )}
-
-          <label>Atributos (opcional) – um por linha: chave=valor
-            <textarea rows={4} value={newAttrs} onChange={e=>setNewAttrs(e.target.value)} placeholder={"DisplayName=Meu App\nclientId=MinhaEmpresa"} />
-          </label>
-
-          <div style={{display:'flex', gap:8}}>
-            <button onClick={createApp} disabled={creating || !org}>{creating ? "Criando..." : "Criar App"}</button>
-            <button onClick={()=>setShowNew(false)}>Cancelar</button>
-          </div>
-          <small>Observação: criação não gera credenciais automaticamente.</small>
-        </div>
-      )}
-
-      {/* Drawer: Excluir App */}
-      {showDel && (
-        <div className="card" style={{display:'grid', gap:8, maxWidth:760, border:'1px solid var(--border)'}}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <strong>Excluir App</strong>
-            <button onClick={()=>setShowDel(false)}>Fechar</button>
-          </div>
-
-          <label>Selecione o App
-            <select value={delAppId} onChange={e=>setDelAppId(e.target.value)}>
-              <option value="">Selecione...</option>
-              {items.map(a => (
-                <option key={a.appId} value={a.appId}>{a.name} — {a.appId}</option>
-              ))}
-            </select>
-          </label>
-
-          <div style={{display:'flex', gap:8}}>
-            <button onClick={deleteApp} disabled={deleting || !delAppId || !org}>{deleting ? "Excluindo..." : "Excluir"}</button>
-            <button onClick={()=>setShowDel(false)}>Cancelar</button>
-          </div>
-          <small>Esta ação é irreversível.</small>
-        </div>
-      )}
+      {/* === FIM (2) === */}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(280px, 36%)", gap: 12, marginTop: 12 }}>
         <div className="card">
@@ -356,9 +288,9 @@ export default function AppsPage() {
                 </div>
               )}
 
-              {/* Botão GERENCIAR com o mesmo visual dos outros botões */}
+              {/* (3) Botões GERENCIAR e EXCLUIR no detalhe */}
               {selected.appId && (
-                <div style={{display:'flex', justifyContent:'flex-end', marginTop:8}}>
+                <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:8}}>
                   <button
                     onClick={()=>{
                       const orgParam = org ? `?org=${encodeURIComponent(org)}` : "";
@@ -367,6 +299,13 @@ export default function AppsPage() {
                     title="Gerenciar credenciais e products"
                   >
                     Gerenciar (credenciais e products)
+                  </button>
+                  <button
+                    onClick={deleteSelectedApp}
+                    style={{ background:'#ef4444', color:'#fff', border:'1px solid #dc2626' }}
+                    title="Excluir App"
+                  >
+                    Excluir app
                   </button>
                 </div>
               )}
