@@ -1,64 +1,49 @@
 ﻿import { NextResponse } from "next/server";
 import { resolveApp, readBearer } from "../../../../../../lib/util/resolveApp";
 
-export async function POST(
-  req: Request,
-  { params }: { params: { appId: string; consumerKey: string } }
-) {
+export async function POST(req: Request, { params }: { params: { appId: string, consumerKey: string } }) {
   try {
+    // lê body uma única vez (para não consumir o stream duas vezes)
+    let body: any = null;
+    try { body = await req.json(); } catch {}
+
     const url = new URL(req.url);
-    const org = url.searchParams.get("org") || "";
+    const org = url.searchParams.get("org") || body?.org;
     if (!org) return NextResponse.json({ error: "org obrigatório" }, { status: 400 });
 
-    const body = await req.json().catch(() => ({}));
-    const action: "approve" | "revoke" = body?.action;
-    if (!action) {
-      return NextResponse.json({ error: "action obrigatório (approve|revoke)" }, { status: 400 });
+    const action = (body?.action || "").toLowerCase();
+    if (action !== "approve" && action !== "revoke") {
+      return NextResponse.json({ error: "action deve ser 'approve' ou 'revoke'" }, { status: 400 });
     }
 
     const bearer = await readBearer();
     const info = await resolveApp(org, params.appId, bearer);
 
-    const base = "https://apigee.googleapis.com/v1";
+    const base = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}`;
     const enc = encodeURIComponent;
-    const keyRelPaths: string[] = [];
 
+    const tries: string[] = [];
     if (info.devEmail) {
-      keyRelPaths.push(
-        `/organizations/${enc(org)}/developers/${enc(info.devEmail)}/apps/${enc(info.appName)}/keys/${enc(params.consumerKey)}`
-      );
+      tries.push(`${base}/developers/${enc(info.devEmail)}/apps/${enc(info.appName)}/keys/${enc(params.consumerKey)}?action=${enc(action)}`);
     }
     if (info.companyName) {
-      keyRelPaths.push(
-        `/organizations/${enc(org)}/companies/${enc(info.companyName)}/apps/${enc(info.appName)}/keys/${enc(params.consumerKey)}`
-      );
+      tries.push(`${base}/companies/${enc(info.companyName)}/apps/${enc(info.appName)}/keys/${enc(params.consumerKey)}?action=${enc(action)}`);
     }
-    // Fallback org-level
-    keyRelPaths.push(
-      `/organizations/${enc(org)}/apps/${enc(info.appName)}/keys/${enc(params.consumerKey)}`
-    );
+    tries.push(`${base}/apps/${enc(info.appName)}/keys/${enc(params.consumerKey)}?action=${enc(action)}`);
 
-    const headers = { Authorization: `Bearer ${bearer}`, "content-type": "application/json" as const };
-    const approveStatus = action === "approve" ? "approved" : "revoked";
-    const attempts: string[] = [];
-
-    // 1) Tenta ?action=approve|revoke (varia por tenant)
-    for (const rel of keyRelPaths) {
-      const u = `${base}${rel}?action=${enc(action)}`;
-      attempts.push(`POST ${u}`);
-      const r = await fetch(u, { method: "POST", headers });
+    let lastText = "";
+    for (const u of tries) {
+      const r = await fetch(u, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        // body vazio ou {} funcionam; enviamos {} para evitar 415 em alguns setups
+        body: "{}"
+      });
       if (r.ok) return NextResponse.json({ ok: true });
+      lastText = await r.text().catch(() => "");
     }
 
-    // 2) Tenta body { status: "approved" | "revoked" }
-    for (const rel of keyRelPaths) {
-      const u = `${base}${rel}`;
-      attempts.push(`POST ${u} body:{status:${approveStatus}}`);
-      const r = await fetch(u, { method: "POST", headers, body: JSON.stringify({ status: approveStatus }) });
-      if (r.ok) return NextResponse.json({ ok: true });
-    }
-
-    return NextResponse.json({ error: "Not Found", attempts }, { status: 400 });
+    return NextResponse.json({ error: "Not Found", attempts: tries }, { status: 400 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
   }
