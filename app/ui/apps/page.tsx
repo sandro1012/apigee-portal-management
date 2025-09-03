@@ -44,82 +44,32 @@ export default function AppsPage() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
 
-  // === (1) ESTADOS + HELPERS para NOVO APP (Developer) e EXCLUIR APP ===
-  const [newDevEmail, setNewDevEmail] = useState("");
-  const [newDisplayName, setNewDisplayName] = useState("");
-  const [newAttrs, setNewAttrs] = useState("clientId=Value\ncompanyId=Value");
+  // Novo App (Developer)
   const [creating, setCreating] = useState(false);
+  const [newAppName, setNewAppName] = useState("");       // Nome do App (Apigee: name)
+  const [newDisplayName, setNewDisplayName] = useState(""); // Atributo DisplayName
+  const [newDevEmail, setNewDevEmail] = useState("");     // developer email
+  const [newAttrsText, setNewAttrsText] = useState("");   // opcional; sem default
 
   function parseAttrsText(txt: string): { name: string; value: string }[] {
-    return (txt || "")
+    const lines = (txt || "")
       .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((line) => {
+      .map(s => s.trim())
+      .filter(Boolean);
+    return lines
+      .map(line => {
         const i = line.indexOf("=");
-        if (i === -1) return null;
+        if (i < 0) return null;
         return { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
       })
       .filter(Boolean) as { name: string; value: string }[];
   }
 
-  async function createApp() {
-    try {
-      if (!org) { alert("Selecione uma org"); return; }
-      if (!newDisplayName.trim()) { alert("Preencha o DisplayName"); return; }
-      if (!newDevEmail.trim()) { alert("Preencha o Developer email"); return; }
-
-      setCreating(true);
-      const attributes = parseAttrsText(newAttrs);
-      const res = await fetch("/api/apps/new", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          org,
-          name: newDisplayName.trim(),
-          devEmail: newDevEmail.trim(),
-          attributes,
-        }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(j.error || res.statusText); return; }
-
-      // recarrega a lista e limpa o formulário
-      await loadApps();
-      setNewDevEmail("");
-      setNewDisplayName("");
-      setNewAttrs("clientId=Value\ncompanyId=Value");
-      alert("App criado com sucesso.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function deleteSelectedApp() {
-    if (!selected) { alert("Selecione um app na lista primeiro."); return; }
-    if (!org) { alert("Selecione a org."); return; }
-    if (!selected.appId) { alert("App sem appId."); return; }
-    if (!confirm(`Excluir app "${selected.name}"? Esta ação não pode ser desfeita.`)) return;
-
-    const res = await fetch(`/api/apps/${encodeURIComponent(selected.appId)}?org=${encodeURIComponent(org)}`, { method: "DELETE" });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) { alert("Falha ao excluir app: " + (j.error || res.statusText)); return; }
-
-    await loadApps();
-    setSelected(null);
-    alert("App excluído com sucesso.");
-  }
-  // === FIM (1) ===
-
-  useEffect(() => {
-    fetch("/api/orgs").then(r => r.json()).then(setOrgs).catch(() => setOrgs([]));
-  }, []);
-
+  useEffect(() => { fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
     if (!org) return;
     setEnv(""); setEnvs([]);
-    fetch(`/api/envs?org=${encodeURIComponent(org)}`)
-      .then(r => r.json()).then(setEnvs).catch(() => setEnvs([]));
+    fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
   }, [org]);
 
   async function saveToken() {
@@ -128,10 +78,7 @@ export default function AppsPage() {
     const j = await res.json().catch(() => ({}));
     if (res.ok) setTokenMsg("Token salvo (expira ~1h)."); else setTokenMsg("Falha: " + (j.error || res.statusText));
   }
-  async function clearToken() {
-    await fetch("/api/auth/token", { method: "DELETE" });
-    setTokenMsg("Token limpo.");
-  }
+  async function clearToken() { await fetch("/api/auth/token", { method: "DELETE" }); setTokenMsg("Token limpo."); }
 
   async function loadApps() {
     if (!org) return;
@@ -145,6 +92,55 @@ export default function AppsPage() {
     if (!org) return;
     const j = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
     setSelected(j);
+  }
+
+  async function createApp() {
+    if (!org) { alert("Selecione a Org."); return; }
+    if (!newAppName.trim()) { alert("Informe o NOME do App."); return; }
+    if (!newDisplayName.trim()) { alert("Informe o DisplayName."); return; }
+    if (!newDevEmail.trim()) { alert("Informe o e-mail do developer."); return; }
+
+    setCreating(true);
+    try {
+      const extraAttrs = newAttrsText.trim() ? parseAttrsText(newAttrsText) : [];
+      // DisplayName obrigatório — manda separado e o backend garante na lista de attributes
+      const res = await fetch("/api/apps/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          org,
+          name: newAppName.trim(),
+          displayName: newDisplayName.trim(),
+          devEmail: newDevEmail.trim(),
+          attributes: extraAttrs
+        })
+      });
+      const j = await res.json().catch(()=>({}));
+      if (!res.ok) { alert(j.error || res.statusText); return; }
+
+      await loadApps();
+      setNewAppName(""); setNewDisplayName(""); setNewDevEmail(""); setNewAttrsText("");
+      alert("App criado com sucesso!");
+    } catch (e:any) {
+      alert("Falha ao criar app: " + (e.message || String(e)));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function deleteSelectedApp() {
+    if (!selected) { alert("Selecione um app na lista primeiro."); return; }
+    if (!org) { alert("Selecione a Org."); return; }
+    if (!selected.appId) { alert("App sem appId."); return; }
+    if (!confirm(`Excluir app "${selected.name}"? Esta ação é irreversível.`)) return;
+
+    const res = await fetch(`/api/apps/${encodeURIComponent(selected.appId)}?org=${encodeURIComponent(org)}`, { method: "DELETE" });
+    const j = await res.json().catch(()=>({}));
+    if (!res.ok) { alert("Falha ao excluir app: " + (j.error || res.statusText)); return; }
+
+    await loadApps();
+    setSelected(null);
+    alert("App excluído com sucesso.");
   }
 
   const filtered = useMemo(() => {
@@ -197,23 +193,35 @@ export default function AppsPage() {
         </div>
       </div>
 
-      {/* === (2) CARD NOVO APP (DEVELOPER) === */}
+      {/* Novo App (Developer) */}
       <div className="card" style={{ display: "grid", gap: 8, maxWidth: 760, marginTop: 12 }}>
         <strong>Novo App (Developer)</strong>
-        <label>Developer email
-          <input placeholder="dev@empresa.com" value={newDevEmail} onChange={e=>setNewDevEmail(e.target.value)} />
+
+        <label>Nome do App (obrigatório)
+          <input value={newAppName} onChange={e=>setNewAppName(e.target.value)} placeholder="MeuApp" />
         </label>
+
         <label>DisplayName (obrigatório)
-          <input placeholder="Nome do App" value={newDisplayName} onChange={e=>setNewDisplayName(e.target.value)} />
+          <input value={newDisplayName} onChange={e=>setNewDisplayName(e.target.value)} placeholder="Nome amigável" />
         </label>
-        <label>Atributos (opcional) — um por linha no formato <code>chave=valor</code>. Exemplo abaixo:
-          <textarea rows={3} value={newAttrs} onChange={e=>setNewAttrs(e.target.value)} />
+
+        <label>Developer email (obrigatório)
+          <input value={newDevEmail} onChange={e=>setNewDevEmail(e.target.value)} placeholder="usuario@dominio.com" />
         </label>
+
+        <label>Atributos (opcional) — um por linha no formato <code>chave=valor</code>
+          <textarea
+            rows={3}
+            value={newAttrsText}
+            onChange={e=>setNewAttrsText(e.target.value)}
+            placeholder={"Exemplos:\nclientId=MinhaEmpresa\ncompanyId=MinhaEmpresa"}
+          />
+        </label>
+
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={createApp} disabled={!org || creating}>{creating ? "Criando..." : "Criar App"}</button>
         </div>
       </div>
-      {/* === FIM (2) === */}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(280px, 36%)", gap: 12, marginTop: 12 }}>
         <div className="card">
@@ -246,7 +254,7 @@ export default function AppsPage() {
           </div>
         </div>
 
-        {/* Painel de detalhes à direita */}
+        {/* Painel de detalhes */}
         <div className="card">
           <h3 style={{marginTop:0}}>Detalhes do App</h3>
           {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
@@ -288,9 +296,8 @@ export default function AppsPage() {
                 </div>
               )}
 
-              {/* (3) Botões GERENCIAR e EXCLUIR no detalhe */}
-              {selected.appId && (
-                <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:8}}>
+              <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:8}}>
+                {selected.appId && (
                   <button
                     onClick={()=>{
                       const orgParam = org ? `?org=${encodeURIComponent(org)}` : "";
@@ -300,15 +307,15 @@ export default function AppsPage() {
                   >
                     Gerenciar (credenciais e products)
                   </button>
-                  <button
-                    onClick={deleteSelectedApp}
-                    style={{ background:'#ef4444', color:'#fff', border:'1px solid #dc2626' }}
-                    title="Excluir App"
-                  >
-                    Excluir app
-                  </button>
-                </div>
-              )}
+                )}
+                <button
+                  onClick={deleteSelectedApp}
+                  style={{ background:'#ef4444', color:'#fff', border:'1px solid #dc2626' }}
+                  title="Excluir App"
+                >
+                  Excluir app
+                </button>
+              </div>
             </div>
           )}
         </div>
