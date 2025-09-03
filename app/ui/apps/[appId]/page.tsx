@@ -28,6 +28,20 @@ async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+/** Converte qualquer payload de products para string[] de nomes. */
+function toProductNames(pr: any): string[] {
+  // aceita vários formatos: array de objetos, array de strings, {apiProduct:[...]}, {names:[...]}
+  const list = Array.isArray(pr) ? pr : (pr?.apiProduct || pr?.names || []);
+  const arr = Array.isArray(list) ? list : [];
+  return arr
+    .map((x: any) => {
+      if (typeof x === "string") return x;
+      if (x && typeof x === "object") return x.name || x.displayName || x.apiproduct || "";
+      return "";
+    })
+    .filter(Boolean);
+}
+
 export default function ManageAppPage() {
   const { appId } = useParams<{ appId: string }>();
   const search = useSearchParams();
@@ -83,16 +97,15 @@ export default function ManageAppPage() {
       setLoading(true);
       setErr("");
       try {
-        // carrega detalhes do app
         const qs = org ? `?org=${encodeURIComponent(org)}` : "";
+        // carrega detalhes do app
         const detail = await fetchJson<AppDetail>(`/api/apps/${encodeURIComponent(appIdStr)}${qs}`);
         setApp(detail);
 
         // tenta carregar lista de products (não bloqueia)
         try {
           const pr = await fetchJson<any>(`/api/products${qs}`);
-          const names: string[] = pr?.names || pr?.apiProduct || pr || [];
-          setAllProducts(Array.isArray(names) ? names : []);
+          setAllProducts(toProductNames(pr));
         } catch {
           setAllProducts([]);
         }
@@ -157,13 +170,12 @@ export default function ManageAppPage() {
       {/* Cabeçalho */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800 }}>
-          Gerenciar credenciais do App <span style={{ fontSize: 12, border: "1px solid var(--border, #333)", padding: "2px 8px", borderRadius: 999, marginLeft: 8 }}>v3c</span>
+          Gerenciar credenciais do App{" "}
+          <span style={{ fontSize: 12, border: "1px solid var(--border, #333)", padding: "2px 8px", borderRadius: 999, marginLeft: 8 }}>
+            v3c
+          </span>
         </h1>
-        <a
-          href={`/ui/apps${org ? `?org=${encodeURIComponent(org)}` : ""}`}
-          style={btnPrimary}
-          title="Voltar para a lista de Apps"
-        >
+        <a href={`/ui/apps${org ? `?org=${encodeURIComponent(org)}` : ""}`} style={btnPrimary} title="Voltar para a lista de Apps">
           ← Voltar para lista de Apps
         </a>
       </div>
@@ -235,7 +247,7 @@ export default function ManageAppPage() {
               <tbody>
                 {creds.map((c) => {
                   const assoc = c.apiProducts?.map((p) => p.apiproduct) || [];
-                  const notAssoc = allProducts.filter((p) => !assoc.includes(p));
+                  const notAssoc = allProducts.filter((p) => typeof p === "string" && !assoc.includes(p));
                   return (
                     <tr key={c.consumerKey} style={{ borderTop: "1px solid var(--border, #333)" }}>
                       {/* Key */}
