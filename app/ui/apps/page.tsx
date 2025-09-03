@@ -44,6 +44,31 @@ export default function AppsPage() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
 
+  // --- UI: Novo/Excluir App ---
+  const [showNew, setShowNew] = useState(false);
+  const [showDel, setShowDel] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [newType, setNewType] = useState<"developer" | "company">("developer");
+  const [newName, setNewName] = useState("");
+  const [newDevEmail, setNewDevEmail] = useState("");
+  const [newCompany, setNewCompany] = useState("");
+  const [newAttrs, setNewAttrs] = useState(""); // chave=valor por linha
+
+  const [delAppId, setDelAppId] = useState("");
+
+  function parseAttrs(txt: string): { name: string; value: string }[] {
+    return txt
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [k, ...rest] = line.split("=");
+        return { name: k.trim(), value: rest.join("=").trim() };
+      });
+  }
+
   useEffect(() => {
     fetch("/api/orgs").then(r => r.json()).then(setOrgs).catch(() => setOrgs([]));
   }, []);
@@ -78,6 +103,60 @@ export default function AppsPage() {
     if (!org) return;
     const j = await fetchJson(`/api/apps/${encodeURIComponent(appId)}?org=${encodeURIComponent(org)}`);
     setSelected(j);
+  }
+
+  // --- actions: criar/excluir app ---
+  async function createApp() {
+    if (!org) { alert("Selecione a Org."); return; }
+    if (!newName.trim()) { alert("Informe o nome do App."); return; }
+    if (newType === "developer" && !newDevEmail.trim()) { alert("Informe o e-mail do developer."); return; }
+    if (newType === "company" && !newCompany.trim()) { alert("Informe o nome da company."); return; }
+
+    setCreating(true);
+    try {
+      const body:any = { org, name: newName.trim(), attributes: parseAttrs(newAttrs) };
+      if (newType === "developer") body.devEmail = newDevEmail.trim();
+      else body.companyName = newCompany.trim();
+
+      const r = await fetch("/api/apps/new", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) throw new Error(j?.error || r.statusText);
+
+      setShowNew(false);
+      setNewName(""); setNewDevEmail(""); setNewCompany(""); setNewAttrs("");
+      await loadApps();
+      alert("App criado com sucesso!");
+    } catch (e:any) {
+      alert("Falha ao criar app: " + (e.message || String(e)));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function deleteApp() {
+    if (!org) { alert("Selecione a Org."); return; }
+    if (!delAppId) { alert("Selecione um App para excluir."); return; }
+    if (!confirm("Tem certeza que deseja excluir este App? Esta ação é irreversível.")) return;
+
+    setDeleting(true);
+    try {
+      const url = `/api/apps/${encodeURIComponent(delAppId)}?org=${encodeURIComponent(org)}`;
+      const r = await fetch(url, { method: "DELETE" });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) throw new Error(j?.error || r.statusText);
+      setShowDel(false);
+      setDelAppId("");
+      await loadApps();
+      alert("App excluído com sucesso!");
+    } catch (e:any) {
+      alert("Falha ao excluir app: " + (e.message || String(e)));
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -130,6 +209,80 @@ export default function AppsPage() {
         </div>
       </div>
 
+      {/* AÇÕES – NOVO / EXCLUIR */}
+      <div className="card" style={{display:'flex', gap:8, alignItems:'center', maxWidth:760, marginTop:8}}>
+        <button onClick={()=>setShowNew(true)}>Novo App</button>
+        <button onClick={()=>setShowDel(true)} disabled={items.length===0}>Excluir App</button>
+      </div>
+
+      {/* Drawer: Novo App */}
+      {showNew && (
+        <div className="card" style={{display:'grid', gap:8, maxWidth:760, border:'1px solid var(--border)'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <strong>Criar novo App</strong>
+            <button onClick={()=>setShowNew(false)}>Fechar</button>
+          </div>
+
+          <label style={{display:'flex', gap:8, alignItems:'center'}}>
+            Tipo:
+            <select value={newType} onChange={e=>setNewType(e.target.value as any)}>
+              <option value="developer">Developer App</option>
+              <option value="company">Company App</option>
+            </select>
+          </label>
+
+          <label>Nome do App
+            <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="MeuApp" />
+          </label>
+
+          {newType === "developer" && (
+            <label>Developer e-mail
+              <input value={newDevEmail} onChange={e=>setNewDevEmail(e.target.value)} placeholder="usuario@dominio.com" />
+            </label>
+          )}
+          {newType === "company" && (
+            <label>Company name
+              <input value={newCompany} onChange={e=>setNewCompany(e.target.value)} placeholder="MinhaCompany" />
+            </label>
+          )}
+
+          <label>Atributos (opcional) – um por linha: chave=valor
+            <textarea rows={4} value={newAttrs} onChange={e=>setNewAttrs(e.target.value)} placeholder={"DisplayName=Meu App\nclientId=MinhaEmpresa"} />
+          </label>
+
+          <div style={{display:'flex', gap:8}}>
+            <button onClick={createApp} disabled={creating || !org}>{creating ? "Criando..." : "Criar App"}</button>
+            <button onClick={()=>setShowNew(false)}>Cancelar</button>
+          </div>
+          <small>Observação: criação não gera credenciais automaticamente.</small>
+        </div>
+      )}
+
+      {/* Drawer: Excluir App */}
+      {showDel && (
+        <div className="card" style={{display:'grid', gap:8, maxWidth:760, border:'1px solid var(--border)'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <strong>Excluir App</strong>
+            <button onClick={()=>setShowDel(false)}>Fechar</button>
+          </div>
+
+          <label>Selecione o App
+            <select value={delAppId} onChange={e=>setDelAppId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {items.map(a => (
+                <option key={a.appId} value={a.appId}>{a.name} — {a.appId}</option>
+              ))}
+            </select>
+          </label>
+
+          <div style={{display:'flex', gap:8}}>
+            <button onClick={deleteApp} disabled={deleting || !delAppId || !org}>{deleting ? "Excluindo..." : "Excluir"}</button>
+            <button onClick={()=>setShowDel(false)}>Cancelar</button>
+          </div>
+          <small>Esta ação é irreversível.</small>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(280px, 36%)", gap: 12, marginTop: 12 }}>
         <div className="card">
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -162,67 +315,65 @@ export default function AppsPage() {
         </div>
 
         {/* Painel de detalhes à direita */}
-<div className="card">
-  <h3 style={{marginTop:0}}>Detalhes do App</h3>
-  {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
-  {selected && (
-    <div style={{display:'grid', gap:8}}>
-      <div><b>Nome:</b> {selected.name}</div>
-      {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
-      {selected.status && <div><b>Status:</b> {selected.status}</div>}
+        <div className="card">
+          <h3 style={{marginTop:0}}>Detalhes do App</h3>
+          {!selected && <div className="small" style={{opacity:.8}}>Selecione um app na lista para ver detalhes.</div>}
+          {selected && (
+            <div style={{display:'grid', gap:8}}>
+              <div><b>Nome:</b> {selected.name}</div>
+              {selected.developerEmail && <div><b>Developer:</b> {selected.developerEmail}</div>}
+              {selected.status && <div><b>Status:</b> {selected.status}</div>}
 
-      {selected.attributes && selected.attributes.length>0 && (
-        <div>
-          <b>Atributos</b>
-          <ul>{selected.attributes.map((at,i)=>(<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
-        </div>
-      )}
+              {selected.attributes && selected.attributes.length>0 && (
+                <div>
+                  <b>Atributos</b>
+                  <ul>{selected.attributes.map((at,i)=>(<li key={i}><code>{at.name}</code>: {at.value}</li>))}</ul>
+                </div>
+              )}
 
-      {selected.apiProducts && selected.apiProducts.length>0 && (
-        <div>
-          <b>Products associados</b>
-          <ul>{selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}</ul>
-        </div>
-      )}
+              {selected.apiProducts && selected.apiProducts.length>0 && (
+                <div>
+                  <b>Products associados</b>
+                  <ul>{selected.apiProducts.map((p,i)=>(<li key={i}>{p}</li>))}</ul>
+                </div>
+              )}
 
-      {selected.credentials && selected.credentials.length>0 && (
-        <div>
-          <b>Credenciais</b>
-          <ul>
-            {selected.credentials.map((c,i)=>(
-              <li key={i} style={{marginBottom:6}}>
-                <div><code>Key:</code> {c.consumerKey}</div>
-                {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
-                <div className="small"><b>Status:</b> {c.status || '-'}</div>
-                {c.apiProducts && c.apiProducts.length>0 && (
-                  <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+              {selected.credentials && selected.credentials.length>0 && (
+                <div>
+                  <b>Credenciais</b>
+                  <ul>
+                    {selected.credentials.map((c,i)=>(
+                      <li key={i} style={{marginBottom:6}}>
+                        <div><code>Key:</code> {c.consumerKey}</div>
+                        {c.consumerSecret && <div className="small" style={{opacity:.8}}><code>Secret:</code> {c.consumerSecret}</div>}
+                        <div className="small"><b>Status:</b> {c.status || '-'}</div>
+                        {c.apiProducts && c.apiProducts.length>0 && (
+                          <div className="small"><b>Products:</b> {c.apiProducts.map(p=>p.apiproduct).join(', ')}</div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-      {/* Botão GERENCIAR com o mesmo visual dos outros botões (usa <button> simples) */}
-      {selected.appId && (
-        <div style={{display:'flex', justifyContent:'flex-end', marginTop:8}}>
-          <button
-            onClick={()=>{
-              const orgParam = org ? `?org=${encodeURIComponent(org)}` : "";
-              window.location.href = `/ui/apps/${encodeURIComponent(selected.appId)}${orgParam}`;
-            }}
-            title="Gerenciar credenciais e products"
-          >
-            Gerenciar (credenciais e products)
-          </button>
+              {/* Botão GERENCIAR com o mesmo visual dos outros botões */}
+              {selected.appId && (
+                <div style={{display:'flex', justifyContent:'flex-end', marginTop:8}}>
+                  <button
+                    onClick={()=>{
+                      const orgParam = org ? `?org=${encodeURIComponent(org)}` : "";
+                      window.location.href = `/ui/apps/${encodeURIComponent(selected.appId)}${orgParam}`;
+                    }}
+                    title="Gerenciar credenciais e products"
+                  >
+                    Gerenciar (credenciais e products)
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
-    </div>
-  )}
-</div>
       </div>
     </main>
   );
 }
-
-/* trigger build */
