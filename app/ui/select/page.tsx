@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+
 type KvmEntry = { name: string; value: any };
 type ExportResp = { keyValueEntries: KvmEntry[]; nextPageToken: string };
 type DiffResp = { add: string[]; del: string[]; chg: {name:string; from:any; to:any}[]; counts?: {add:number; del:number; chg:number} };
@@ -32,46 +33,49 @@ function validateKvmSchema(data: any): { ok: boolean; message?: string } {
 
 export default function SelectUI() {
   const [orgs, setOrgs] = useState<string[]>([]);
-  const [org, setOrg] = useState<string>("");
+  const [org, setOrg] = useState<string>('');
   const [envs, setEnvs] = useState<string[]>([]);
-  const [env, setEnv] = useState<string>("");
+  const [env, setEnv] = useState<string>('');
   const [kvms, setKvms] = useState<string[]>([]);
-  const [kvm, setKvm] = useState<string>("");
-  const [result, setResult] = useState<string>("");
+  const [kvm, setKvm] = useState<string>('');
+  const [result, setResult] = useState<string>('');
 
-  const [tokenInput, setTokenInput] = useState<string>("");
+  const [tokenInput, setTokenInput] = useState<string>('');
   const [tokenSaved, setTokenSaved] = useState<boolean>(false);
-  const [tokenMsg, setTokenMsg] = useState<string>("");
+  const [tokenMsg, setTokenMsg] = useState<string>('');
 
-  const [editorJson, setEditorJson] = useState<string>("");
-  const [editorStatus, setEditorStatus] = useState<string>("");
+  const [editorJson, setEditorJson] = useState<string>('');
+  const [editorStatus, setEditorStatus] = useState<string>('');
   const [diffPreview, setDiffPreview] = useState<DiffResp | null>(null);
 
-  const [newKvmName, setNewKvmName] = useState<string>("");
+  const [newKvmName, setNewKvmName] = useState<string>('');
   const [newKvmEncrypted, setNewKvmEncrypted] = useState<boolean>(true);
   const fileRef = useRef<HTMLInputElement|null>(null);
-  const [createMsg, setCreateMsg] = useState<string>("");
+  const [createMsg, setCreateMsg] = useState<string>('');
+
+  // ⬇️ loading para exclusão de KVM
+  const [deleting, setDeleting] = useState<boolean>(false);
 
   useEffect(() => { fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
     if (!org) return;
-    setEnv(""); setEnvs([]); setKvms([]); setKvm("");
+    setEnv(''); setEnvs([]); setKvms([]); setKvm('');
     fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
   }, [org]);
 
   async function saveToken() {
-    setTokenSaved(false); setTokenMsg("");
+    setTokenSaved(false); setTokenMsg('');
     const res = await fetch('/api/auth/token', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token: tokenInput.trim() }) });
     const j = await res.json().catch(()=>({}));
-    if (res.ok) { setTokenSaved(true); setTokenMsg("Token salvo (expira ~1h)."); } else { setTokenMsg("Falha ao salvar: " + (j.error || res.statusText)); }
+    if (res.ok) { setTokenSaved(true); setTokenMsg('Token salvo (expira ~1h).'); } else { setTokenMsg('Falha ao salvar: ' + (j.error || res.statusText)); }
   }
-  async function clearToken() { await fetch('/api/auth/token', { method: 'DELETE' }); setTokenSaved(false); setTokenMsg("Token limpo."); }
+  async function clearToken() { await fetch('/api/auth/token', { method: 'DELETE' }); setTokenSaved(false); setTokenMsg('Token limpo.'); }
 
   async function loadKvms() {
     if (!org || !env) return;
     const res = await fetch('/api/kvms', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({org, env})});
     const data = await res.json();
-    if (!res.ok) { alert(data.error || "Erro inesperado"); return; }
+    if (!res.ok) { alert(data.error || 'Erro inesperado'); return; }
     setKvms(Array.isArray(data)? data : []);
   }
 
@@ -79,62 +83,62 @@ export default function SelectUI() {
     if (!org || !env || !kvm) return;
     const res = await fetch('/api/kvm/export', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({org, env, kvm})});
     const data: ExportResp = await res.json();
-    if (!res.ok) { alert((data as any).error || "Erro inesperado"); return; }
+    if (!res.ok) { alert((data as any).error || 'Erro inesperado'); return; }
     const pretty = JSON.stringify(data, null, 2);
     setResult(pretty); setEditorJson(pretty);
-    setEditorStatus("JSON carregado. Edite e clique em Salvar.");
+    setEditorStatus('JSON carregado. Edite e clique em Salvar.');
     setDiffPreview(null);
   }
 
   function downloadJson() {
-    const text = editorJson || result || "";
+    const text = editorJson || result || '';
     if (!text.trim()) return;
-    const blob = new Blob([text], { type: "application/json" });
-    const a = document.createElement("a");
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    a.href = URL.createObjectURL(blob); a.download = `${org||"org"}_${env||"env"}_${kvm||"kvm"}_${stamp}.json`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
+    const blob = new Blob([text], { type: 'application/json' });
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = URL.createObjectURL(blob); a.download = `${org||'org'}_${env||'env'}_${kvm||'kvm'}_${stamp}.json`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
   }
 
   async function showDiff() {
     try {
-      setEditorStatus("Validando JSON...");
+      setEditorStatus('Validando JSON...');
       const parsed = JSON.parse(editorJson);
       const check = validateKvmSchema(parsed);
-      if (!check.ok) { setEditorStatus("Schema inválido: " + check.message); return; }
-      setEditorStatus("Calculando diff...");
+      if (!check.ok) { setEditorStatus('Schema inválido: ' + check.message); return; }
+      setEditorStatus('Calculando diff...');
       const res = await fetch('/api/kvm/dry-run', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ org, env, kvm, data: parsed }) });
       const j: DiffResp | any = await res.json();
-      if (!res.ok) { setEditorStatus("Falha: " + (j.error || res.statusText)); return; }
+      if (!res.ok) { setEditorStatus('Falha: ' + (j.error || res.statusText)); return; }
       setDiffPreview(j as DiffResp);
-      setEditorStatus("Prévia de alterações gerada.");
-    } catch (e:any) { setEditorStatus("Erro: " + (e.message || String(e))); }
+      setEditorStatus('Prévia de alterações gerada.');
+    } catch (e:any) { setEditorStatus('Erro: ' + (e.message || String(e))); }
   }
 
   async function saveEdit() {
     try {
-      setEditorStatus("Validando JSON...");
+      setEditorStatus('Validando JSON...');
       const parsed = JSON.parse(editorJson);
       const check = validateKvmSchema(parsed);
-      if (!check.ok) { setEditorStatus("Schema inválido: " + check.message); return; }
-      setEditorStatus("Aplicando diffs...");
+      if (!check.ok) { setEditorStatus('Schema inválido: ' + check.message); return; }
+      setEditorStatus('Aplicando diffs...');
       const res = await fetch('/api/kvm/update', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ org, env, kvm, data: parsed }) });
       const j = await res.json();
-      if (!res.ok) { setEditorStatus("Falha: " + (j.error || res.statusText)); return; }
+      if (!res.ok) { setEditorStatus('Falha: ' + (j.error || res.statusText)); return; }
       setEditorStatus(`Sucesso! created=${j.created} updated=${j.updated} deleted=${j.deleted}`);
       setDiffPreview(null);
-    } catch (e:any) { setEditorStatus("Erro: " + (e.message || String(e))); }
+    } catch (e:any) { setEditorStatus('Erro: ' + (e.message || String(e))); }
   }
 
   async function createNewKvm() {
-    if (!org || !env || !newKvmName.trim()) { setCreateMsg("Preencha org/env/nome."); return; }
+    if (!org || !env || !newKvmName.trim()) { setCreateMsg('Preencha org/env/nome.'); return; }
     const file = fileRef.current?.files?.[0];
-    if (!file) { setCreateMsg("Envie o arquivo JSON obrigatório."); return; }
-    setCreateMsg("Validando JSON...");
+    if (!file) { setCreateMsg('Envie o arquivo JSON obrigatório.'); return; }
+    setCreateMsg('Validando JSON...');
     try {
       const text = await file.text();
       const json = JSON.parse(text);
       const check = validateKvmSchema(json);
-      if (!check.ok) { setCreateMsg("Schema inválido: " + check.message); return; }
+      if (!check.ok) { setCreateMsg('Schema inválido: ' + check.message); return; }
 
       const fd = new FormData();
       fd.set('org', org);
@@ -143,14 +147,46 @@ export default function SelectUI() {
       fd.set('encrypted', String(newKvmEncrypted));
       fd.set('json', JSON.stringify(json)); // backend espera string json
 
-      setCreateMsg("Criando KVM...");
+      setCreateMsg('Criando KVM...');
       const res = await fetch('/api/kvm/create', { method: 'POST', body: fd });
       const j = await res.json();
-      if (!res.ok) { setCreateMsg("Falha: " + (j.error || res.statusText)); return; }
-      setCreateMsg("KVM criado e entradas aplicadas!");
+      if (!res.ok) { setCreateMsg('Falha: ' + (j.error || res.statusText)); return; }
+      setCreateMsg('KVM criado e entradas aplicadas!');
       await loadKvms();
       setKvm(newKvmName.trim());
-    } catch (e:any) { setCreateMsg("Erro: " + (e.message || String(e))); }
+    } catch (e:any) { setCreateMsg('Erro: ' + (e.message || String(e))); }
+  }
+
+  // ⬇️ Excluir KVM por completo
+  async function deleteKvm() {
+    if (!org || !env || !kvm) {
+      alert('Selecione Org, Env e um KVM para excluir.');
+      return;
+    }
+    if (!confirm(`Excluir o KVM "${kvm}" por completo? Esta ação é irreversível.`)) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const qs = `?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`;
+      const res = await fetch(`/api/kvms/${encodeURIComponent(kvm)}${qs}`, { method: 'DELETE' });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || res.statusText);
+
+      // limpa editor e recarrega lista
+      setEditorJson('');
+      setResult('');
+      setDiffPreview(null);
+      setKvm('');
+      await loadKvms();
+
+      alert('KVM excluído com sucesso!');
+    } catch (e:any) {
+      alert('Falha ao excluir KVM: ' + (e.message || String(e)));
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -194,6 +230,15 @@ export default function SelectUI() {
         <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
           <button onClick={exportKvm} disabled={!kvm}>Exportar (carregar no editor)</button>
           <button onClick={downloadJson} disabled={!(editorJson || result)}>Baixar JSON</button>
+          {/* Excluir KVM */}
+          <button
+            onClick={deleteKvm}
+            disabled={!kvm || deleting}
+            title="Exclui o KeyValueMap completo (org/env)"
+            style={{ borderColor: '#dc2626' }}
+          >
+            {deleting ? 'Excluindo...' : 'Excluir KVM'}
+          </button>
         </div>
       </section>
 
