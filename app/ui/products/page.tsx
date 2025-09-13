@@ -16,7 +16,6 @@ type ApiProduct = {
   description?: string;
   approvalType?: string;
   attributes?: { name: string; value: string }[];
-  // pode vir um ou outro conforme tenant:
   apiResources?: string[];
   operationGroup?: OperationGroup;
 };
@@ -29,6 +28,25 @@ async function fetchJson<T=any>(url: string, init?: RequestInit): Promise<T> {
   return j as T;
 }
 
+// --- helpers robustos ----
+function normalizeProductNames(input: any): string[] {
+  const out = new Set<string>();
+  const push = (v: any) => {
+    if (typeof v === "string" && v.trim()) out.add(v);
+    else if (v && typeof v.name === "string" && v.name.trim()) out.add(v.name);
+  };
+  if (Array.isArray(input)) {
+    for (const it of input) push(it);
+  } else if (input && typeof input === "object") {
+    const keys = ["names", "apiProduct", "apiproducts", "products", "items"];
+    for (const k of keys) {
+      const arr = (input as any)[k];
+      if (Array.isArray(arr)) for (const it of arr) push(it);
+    }
+  }
+  return Array.from(out);
+}
+
 const btnBase: React.CSSProperties = {
   borderRadius: 8,
   padding: "8px 12px",
@@ -39,7 +57,7 @@ const btnBase: React.CSSProperties = {
 };
 const btnPrimary: React.CSSProperties = {
   ...btnBase,
-  background: "#facc15", // amarelo
+  background: "#facc15",
   color: "#111",
   borderColor: "#eab308",
 };
@@ -66,13 +84,9 @@ export default function ProductsPage() {
   const [detail, setDetail] = useState<ApiProduct|null>(null);
   const [err, setErr] = useState("");
 
-  // seleção para multi-delete
   const [checks, setChecks] = useState<Record<string, boolean>>({});
-
-  // proxies disponíveis para ADD operation
   const [proxies, setProxies] = useState<string[]>([]);
 
-  // form de ADD operation
   const [addProxy, setAddProxy] = useState("");
   const [addPath, setAddPath] = useState("");
   const [addMethods, setAddMethods] = useState<Method[]>([]);
@@ -90,13 +104,8 @@ export default function ProductsPage() {
     setErr("");
     try {
       const qs = `?org=${encodeURIComponent(org)}`;
-      // /api/products GET já lista nomes
       const j = await fetchJson<any>(`/api/products${qs}`);
-      const names: string[] =
-        (Array.isArray(j) ? j :
-        Array.isArray(j?.names) ? j.names :
-        Array.isArray(j?.apiProduct) ? j.apiProduct.map((x:any)=>x?.name).filter(Boolean) :
-        []);
+      const names = normalizeProductNames(j);
       setList(names);
       setChecks({});
       setSelected("");
@@ -116,22 +125,22 @@ export default function ProductsPage() {
       const qs = `?org=${encodeURIComponent(org)}`;
       const j = await fetchJson<ApiProduct>(`/api/products/${encodeURIComponent(name)}${qs}`);
       setDetail(j);
-      // carrega proxies para o ADD
       try {
         const apis = await fetchJson<{names:string[]}>(`/api/apis${qs}`);
-        setProxies(apis?.names || []);
-      } catch {
-        setProxies([]);
-      }
+        setProxies(Array.isArray(apis?.names) ? apis.names : []);
+      } catch { setProxies([]); }
     } catch (e:any) {
       setErr(e.message || String(e));
     }
   }
 
-  function filtered() {
-    const t = q.toLowerCase();
-    return list.filter(n => n.toLowerCase().includes(t));
-  }
+  const filtered: string[] = useMemo(() => {
+    const t = (q || "").toLowerCase();
+    return (Array.isArray(list) ? list : [])
+      .filter(n => typeof n === "string")
+      .map(n => n as string)
+      .filter(n => n.toLowerCase().includes(t));
+  }, [list, q]);
 
   function opRowsFromDetail(p: ApiProduct): Array<{
     apiSource: string;
@@ -151,7 +160,6 @@ export default function ProductsPage() {
       }
       return rows;
     }
-    // Fallback visual quando só há apiResources (sem granularidade)
     if (Array.isArray(p.apiResources) && p.apiResources.length>0) {
       for (const res of p.apiResources) {
         rows.push({ apiSource: "(apiResources)", resource: res, methods: ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"] });
@@ -160,7 +168,6 @@ export default function ProductsPage() {
     return rows;
   }
 
-  // aplica um novo operationGroup (PUT via /update)
   async function applyOpGroup(newOg: OperationGroup) {
     if (!org || !selected) return;
     const qs = `?org=${encodeURIComponent(org)}`;
@@ -173,15 +180,12 @@ export default function ProductsPage() {
   }
 
   function toOperationGroup(rows: Array<{apiSource:string;resource:string;methods:Method[];quota?:Quota}>): OperationGroup {
-    // agrupa por apiSource com quota por config
     const byApi = new Map<string, { ops: Operation[], quota?: Quota }>();
     for (const r of rows) {
-      const k = r.apiSource;
-      const bucket = byApi.get(k) || { ops: [], quota: r.quota };
+      const bucket = byApi.get(r.apiSource) || { ops: [], quota: r.quota };
       bucket.ops.push({ resource: r.resource, methods: r.methods });
-      // se qualquer linha tem quota, mantemos a última definida
       if (r.quota) bucket.quota = r.quota;
-      byApi.set(k, bucket);
+      byApi.set(r.apiSource, bucket);
     }
     const operationConfigs: OperationConfig[] = Array.from(byApi.entries()).map(([apiSource, v]) => ({
       apiSource,
@@ -191,7 +195,6 @@ export default function ProductsPage() {
     return { operationConfigs, operationConfigType: "proxy" };
   }
 
-  // remove uma linha (apiSource+resource) — se esvaziar o proxy, cai fora o config
   async function removeOperation(row: {apiSource:string;resource:string}) {
     if (!detail) return;
     const rows = opRowsFromDetail(detail).filter(r => !(r.apiSource === row.apiSource && r.resource === row.resource));
@@ -199,7 +202,6 @@ export default function ProductsPage() {
     await applyOpGroup(newOg);
   }
 
-  // altera quota de um apiSource específico (todas as linhas desse proxy herdam a quota do config)
   async function changeQuotaForApiSource(apiSource: string, q: Quota) {
     if (!detail) return;
     const rows = opRowsFromDetail(detail).map(r => (r.apiSource===apiSource ? { ...r, quota: q } : r));
@@ -207,7 +209,6 @@ export default function ProductsPage() {
     await applyOpGroup(newOg);
   }
 
-  // adiciona uma nova operação
   async function addOperation() {
     if (!detail || !selected) return;
     if (!addProxy || !addPath.trim() || addMethods.length===0) {
@@ -223,11 +224,9 @@ export default function ProductsPage() {
     });
     const newOg = toOperationGroup(rows);
     await applyOpGroup(newOg);
-    // limpa o form
-    setAddPath(""); setAddMethods([]); /* mantém proxy escolhido */ 
+    setAddPath(""); setAddMethods([]);
   }
 
-  // multi-delete products
   async function deleteSelected() {
     if (!org) return;
     const names = Object.keys(checks).filter(k => checks[k]);
@@ -238,7 +237,6 @@ export default function ProductsPage() {
         const qs = `?org=${encodeURIComponent(org)}`;
         await fetchJson(`/api/products/${encodeURIComponent(n)}${qs}`, { method: "DELETE" });
       } catch (e:any) {
-        // segue tentando os demais, mas informa ao final
         console.error("Falha ao excluir", n, e?.message || String(e));
       }
     }
@@ -246,7 +244,6 @@ export default function ProductsPage() {
     alert("Concluído (verifique a lista).");
   }
 
-  // UI helpers:
   const rows = detail ? opRowsFromDetail(detail) : [];
 
   return (
@@ -272,27 +269,29 @@ export default function ProductsPage() {
         <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
             <strong>Products</strong>
-            <button style={btnDanger} onClick={deleteSelected} disabled={Object.values(checks).every(v=>!v)}>Excluir selecionados</button>
+            <button style={btnDanger} onClick={deleteSelected} disabled={filtered.length===0 || filtered.every(n=>!checks[n])}>Excluir selecionados</button>
           </div>
           {loading && <div>Carregando…</div>}
           {!loading && (
             <table style={{width:'100%', borderCollapse:'collapse'}}>
               <thead>
                 <tr>
-                  <th style={{textAlign:'left', padding:'8px 6px'}}><input
-                    type="checkbox"
-                    checked={filtered().length>0 && filtered().every(n => checks[n])}
-                    onChange={e=>{
-                      const all = {...checks};
-                      for (const n of filtered()) all[n] = e.currentTarget.checked;
-                      setChecks(all);
-                    }}
-                  /></th>
+                  <th style={{textAlign:'left', padding:'8px 6px'}}>
+                    <input
+                      type="checkbox"
+                      checked={filtered.length>0 && filtered.every(n => checks[n])}
+                      onChange={e=>{
+                        const all = {...checks};
+                        for (const n of filtered) all[n] = e.currentTarget.checked;
+                        setChecks(all);
+                      }}
+                    />
+                  </th>
                   <th style={{textAlign:'left', padding:'8px 6px'}}>Product</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered().map(n=>(
+                {filtered.map(n=>(
                   <tr key={n} style={{borderTop:'1px solid var(--border)'}}>
                     <td style={{padding:'8px 6px'}}>
                       <input type="checkbox" checked={!!checks[n]} onChange={e=> setChecks({...checks, [n]: e.currentTarget.checked})} />
@@ -302,7 +301,7 @@ export default function ProductsPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered().length===0 && <tr><td colSpan={2} style={{padding:'10px 6px', opacity:.7}}>Nenhum product</td></tr>}
+                {filtered.length===0 && <tr><td colSpan={2} style={{padding:'10px 6px', opacity:.7}}>Nenhum product</td></tr>}
               </tbody>
             </table>
           )}
