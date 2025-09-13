@@ -1,51 +1,60 @@
-import { getBearer, getOrg } from "../../../../lib/auth";
-import { operationGroupSchema } from "../../../../lib/schema/product";
+// app/api/products/[name]/update/route.ts
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-const ALLOWED_KEYS = new Set([
-  "name","displayName","approvalType","attributes","description","environments","proxies","scopes","quota","quotaInterval","quotaTimeUnit","operationGroup","apiResources"
-]);
+async function readBearer(): Promise<string> {
+  const c = cookies().get("gcp_token")?.value;
+  if (c) return c;
+  if (process.env.GCP_USER_TOKEN) return String(process.env.GCP_USER_TOKEN);
+  throw new Error("Token Google não encontrado (salve via UI ou configure GCP_USER_TOKEN).");
+}
 
 export async function POST(req: Request, { params }: { params: { name: string } }) {
   try {
-    const bearer = getBearer();
-    const org = getOrg();
-    if (!bearer) return new Response(JSON.stringify({ error: "missing token" }), { status: 401 });
-    if (!org) return new Response(JSON.stringify({ error: "missing org" }), { status: 400 });
-    const name = params.name;
+    const name = params?.name || "";
+    if (!name) return NextResponse.json({ error: "name obrigatório" }, { status: 400 });
 
-    const raw = await req.json().catch(() => ({}));
-    const groupInput = raw?.operationGroup ? raw.operationGroup : { operationConfigs: raw?.operationConfigs };
-    const parsed = operationGroupSchema.safeParse(groupInput);
-    if (!parsed.success) {
-      return new Response(JSON.stringify({ error: "invalid payload", issues: parsed.error.flatten() }, null, 2), { status: 400, headers: { "Content-Type": "application/json" } });
-    }
+    const u = new URL(req.url);
+    let org = u.searchParams.get("org") || "";
+    const body = await req.json().catch(() => ({}));
+    if (!org) org = body?.org || "";
+    const incomingOpGroup = body?.operationGroup;
+    if (!org) return NextResponse.json({ error: "org obrigatório" }, { status: 400 });
 
-    const getUrl = `https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts/${encodeURIComponent(name)}`;
-    const currentRes = await fetch(getUrl, { headers: { Authorization: bearer } });
-    const current = await currentRes.json().catch(() => ({}));
-    if (!currentRes.ok) {
-      return new Response(JSON.stringify({ error: current.error || current.message || "failed to fetch product" }), { status: currentRes.status });
-    }
+    const bearer = await readBearer();
+    const base = "https://apigee.googleapis.com/v1";
+    const enc = encodeURIComponent;
+    const hdr = { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" };
 
-    const putBody: any = {};
-    for (const k of Object.keys(current)) {
-      if (ALLOWED_KEYS.has(k)) putBody[k] = current[k];
-    }
-    putBody.operationGroup = parsed.data;
-    if ("apiResources" in putBody) delete putBody.apiResources;
+    // Busca produto atual
+    const rGet = await fetch(`${base}/organizations/${enc(org)}/apiproducts/${enc(name)}`, { headers: { Authorization: `Bearer ${bearer}` } });
+    const txtGet = await rGet.text();
+    const current = txtGet ? JSON.parse(txtGet) : null;
+    if (!rGet.ok) return NextResponse.json({ error: current?.error?.message || current?.message || txtGet || rGet.statusText }, { status: rGet.status });
 
-    const pr = await fetch(getUrl, {
+    // Monta payload de update:
+    // mantemos campos importantes e substituímos operationGroup
+    const updated = {
+      ...current,
+      name: current.name || name,
+      operationGroup: incomingOpGroup || current.operationGroup || undefined,
+      apiResources: undefined, // removemos para não conflitar com operationGroup
+    };
+
+    // PUT para atualizar o product
+    const rPut = await fetch(`${base}/organizations/${enc(org)}/apiproducts/${enc(name)}`, {
       method: "PUT",
-      headers: { Authorization: bearer, "Content-Type": "application/json" },
-      body: JSON.stringify(putBody),
+      headers: hdr,
+      body: JSON.stringify(updated),
     });
-    const pj = await pr.json().catch(() => ({}));
-    if (!pr.ok) {
-      return new Response(JSON.stringify({ error: pj.error || pj.message || "update failed", body: pj }, null, 2), { status: pr.status, headers: { "Content-Type": "application/json" } });
+    const txtPut = await rPut.text();
+    const out = txtPut ? JSON.parse(txtPut) : null;
+    if (!rPut.ok) {
+      return NextResponse.json({ error: out?.error?.message || out?.message || txtPut || rPut.statusText }, { status: rPut.status });
     }
 
-    return new Response(JSON.stringify({ ok: true, product: pj }, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || "internal error" }), { status: 500 });
+    return NextResponse.json(out);
+  } catch (e:any) {
+    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
   }
 }
