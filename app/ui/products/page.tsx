@@ -20,6 +20,8 @@ type ApiProduct = {
   operationGroup?: OperationGroup;
 };
 
+type ProxyOption = { name: string; basepaths?: string[] };
+
 async function fetchJson<T=any>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
   const txt = await r.text();
@@ -45,6 +47,37 @@ function normalizeProductNames(input: any): string[] {
     }
   }
   return Array.from(out);
+}
+
+function normalizeProxies(input: any): ProxyOption[] {
+  const out: ProxyOption[] = [];
+  const add = (name: string, basepaths?: string[]) => {
+    if (!name) return;
+    out.push({ name, basepaths: basepaths && basepaths.length ? basepaths : undefined });
+  };
+
+  if (input && Array.isArray(input.proxies)) {
+    for (const p of input.proxies) {
+      const name = typeof p === "string" ? p : String(p?.name || "");
+      const bps = Array.isArray(p?.basepaths) ? p.basepaths.filter((x: any)=> typeof x === "string" && x.trim()) : undefined;
+      add(name, bps);
+    }
+    return out;
+  }
+
+  if (Array.isArray(input?.names)) {
+    for (const n of input.names) add(String(n || ""));
+    return out;
+  }
+
+  if (Array.isArray(input)) {
+    for (const it of input) {
+      if (typeof it === "string") add(it);
+      else if (it && typeof it.name === "string") add(it.name, Array.isArray(it.basepaths) ? it.basepaths : undefined);
+    }
+  }
+
+  return out;
 }
 
 const btnBase: React.CSSProperties = {
@@ -76,6 +109,8 @@ const btnNeutral: React.CSSProperties = {
 export default function ProductsPage() {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState<string>("");
+  const [envs, setEnvs] = useState<string[]>([]);
+  const [env, setEnv] = useState<string>("");
 
   const [list, setList] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,8 +120,9 @@ export default function ProductsPage() {
   const [err, setErr] = useState("");
 
   const [checks, setChecks] = useState<Record<string, boolean>>({});
-  const [proxies, setProxies] = useState<string[]>([]);
+  const [proxies, setProxies] = useState<ProxyOption[]>([]);
 
+  // add operation form
   const [addProxy, setAddProxy] = useState("");
   const [addPath, setAddPath] = useState("");
   const [addMethods, setAddMethods] = useState<Method[]>([]);
@@ -94,9 +130,19 @@ export default function ProductsPage() {
   const [addInterval, setAddInterval] = useState("");
   const [addTimeUnit, setAddTimeUnit] = useState<Quota["timeUnit"]>("MINUTE");
 
+  // quota edição explícita por proxy (apiSource)
+  const [quotaEdits, setQuotaEdits] = useState<Record<string, Quota>>({});
+
   useEffect(() => {
     fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
   }, []);
+
+  useEffect(() => {
+    if (!org) { setEnv(""); setEnvs([]); return; }
+    fetch(`/api/envs?org=${encodeURIComponent(org)}`)
+      .then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]);
+    );
+  }, [org]);
 
   async function loadProducts() {
     if (!org) return;
@@ -117,6 +163,17 @@ export default function ProductsPage() {
     }
   }
 
+  async function loadProxies() {
+    if (!org) return;
+    try {
+      const qs = `?org=${encodeURIComponent(org)}${env ? `&env=${encodeURIComponent(env)}` : ""}`;
+      const j = await fetchJson<any>(`/api/apis${qs}`);
+      setProxies(normalizeProxies(j));
+    } catch {
+      setProxies([]);
+    }
+  }
+
   async function openDetail(name: string) {
     if (!org || !name) return;
     setSelected(name);
@@ -125,10 +182,17 @@ export default function ProductsPage() {
       const qs = `?org=${encodeURIComponent(org)}`;
       const j = await fetchJson<ApiProduct>(`/api/products/${encodeURIComponent(name)}${qs}`);
       setDetail(j);
-      try {
-        const apis = await fetchJson<{names:string[]}>(`/api/apis${qs}`);
-        setProxies(Array.isArray(apis?.names) ? apis.names : []);
-      } catch { setProxies([]); }
+
+      // quotaEdits inicial por apiSource
+      const rows = opRowsFromDetail(j);
+      const seed: Record<string, Quota> = {};
+      for (const r of rows) {
+        const prev = seed[r.apiSource];
+        seed[r.apiSource] = prev || { ...r.quota };
+      }
+      setQuotaEdits(seed);
+
+      await loadProxies();
     } catch (e:any) {
       setErr(e.message || String(e));
     }
@@ -202,8 +266,9 @@ export default function ProductsPage() {
     await applyOpGroup(newOg);
   }
 
-  async function changeQuotaForApiSource(apiSource: string, q: Quota) {
+  async function saveQuotaForApiSource(apiSource: string) {
     if (!detail) return;
+    const q = quotaEdits[apiSource] || {};
     const rows = opRowsFromDetail(detail).map(r => (r.apiSource===apiSource ? { ...r, quota: q } : r));
     const newOg = toOperationGroup(rows);
     await applyOpGroup(newOg);
@@ -250,11 +315,17 @@ export default function ProductsPage() {
     <main>
       <h2>API Products</h2>
 
-      <div className="card" style={{display:'grid', gap:8, maxWidth:760, marginBottom:12}}>
+      <div className="card" style={{display:'grid', gap:8, maxWidth:860, marginBottom:12}}>
         <label>Org
-          <select value={org} onChange={e=>setOrg(e.target.value)}>
+          <select value={org} onChange={e=>{ setOrg(e.target.value); setEnv(""); }}>
             <option value="">Selecione...</option>
             {orgs.map(o=>(<option key={o} value={o}>{o}</option>))}
+          </select>
+        </label>
+        <label>Env
+          <select value={env} onChange={e=>setEnv(e.target.value)}>
+            <option value="">(opcional) — filtra APIs deployadas</option>
+            {envs.map(x=>(<option key={x} value={x}>{x}</option>))}
           </select>
         </label>
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
@@ -264,7 +335,7 @@ export default function ProductsPage() {
         {err && <div style={{color:"#ef4444"}}>Erro: {err}</div>}
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(380px, 42%)', gap:12}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(420px, 46%)', gap:12}}>
         {/* Lista */}
         <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
@@ -276,7 +347,7 @@ export default function ProductsPage() {
             <table style={{width:'100%', borderCollapse:'collapse'}}>
               <thead>
                 <tr>
-                  <th style={{textAlign:'left', padding:'8px 6px'}}>
+                  <th style={{textAlign:'left', padding:'6px'}}>
                     <input
                       type="checkbox"
                       checked={filtered.length>0 && filtered.every(n => checks[n])}
@@ -287,21 +358,21 @@ export default function ProductsPage() {
                       }}
                     />
                   </th>
-                  <th style={{textAlign:'left', padding:'8px 6px'}}>Product</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>Product</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(n=>(
                   <tr key={n} style={{borderTop:'1px solid var(--border)'}}>
-                    <td style={{padding:'8px 6px'}}>
+                    <td style={{padding:'6px'}}>
                       <input type="checkbox" checked={!!checks[n]} onChange={e=> setChecks({...checks, [n]: e.currentTarget.checked})} />
                     </td>
-                    <td style={{padding:'8px 6px', cursor:'pointer'}} onClick={()=>openDetail(n)}>
+                    <td style={{padding:'6px', cursor:'pointer'}} onClick={()=>openDetail(n)}>
                       {n}
                     </td>
                   </tr>
                 ))}
-                {filtered.length===0 && <tr><td colSpan={2} style={{padding:'10px 6px', opacity:.7}}>Nenhum product</td></tr>}
+                {filtered.length===0 && <tr><td colSpan={2} style={{padding:'8px', opacity:.7}}>Nenhum product</td></tr>}
               </tbody>
             </table>
           )}
@@ -315,28 +386,28 @@ export default function ProductsPage() {
           {detail && (
             <div style={{display:'grid', gap:10}}>
               <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
-                <div className="card" style={{padding:12}}>
+                <div className="card" style={{padding:10}}>
                   <div className="small" style={{opacity:.7}}>Nome</div>
                   <div style={{fontFamily:'monospace'}}>{detail.displayName || detail.name}</div>
                 </div>
-                <div className="card" style={{padding:12}}>
+                <div className="card" style={{padding:10}}>
                   <div className="small" style={{opacity:.7}}>ID</div>
                   <div style={{fontFamily:'monospace'}}>{detail.name}</div>
                 </div>
-                <div className="card" style={{padding:12}}>
+                <div className="card" style={{padding:10}}>
                   <div className="small" style={{opacity:.7}}>Approval</div>
                   <div>{detail.approvalType || "-"}</div>
                 </div>
-                <div className="card" style={{padding:12}}>
+                <div className="card" style={{padding:10}}>
                   <div className="small" style={{opacity:.7}}>Descrição</div>
                   <div>{detail.description || "-"}</div>
                 </div>
               </div>
 
               <div>
-                <h4 style={{margin:'10px 0 8px'}}>Operations</h4>
+                <h4 style={{margin:'8px 0'}}>Operations</h4>
                 {rows.length===0 && (
-                  <div className="card" style={{padding:12}}>Nenhum resource / operação associado.</div>
+                  <div className="card" style={{padding:10}}>Nenhum resource / operação associado.</div>
                 )}
 
                 {rows.length>0 && (
@@ -344,54 +415,52 @@ export default function ProductsPage() {
                     <table style={{width:'100%', borderCollapse:'collapse', minWidth:820}}>
                       <thead>
                         <tr>
-                          <th style={{textAlign:'left', padding:'8px 6px'}}>Proxy</th>
-                          <th style={{textAlign:'left', padding:'8px 6px'}}>Path</th>
-                          <th style={{textAlign:'left', padding:'8px 6px'}}>Methods</th>
-                          <th style={{textAlign:'left', padding:'8px 6px'}}>Quota (limit / interval / unit)</th>
-                          <th style={{textAlign:'left', padding:'8px 6px'}}>Ações</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Proxy</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Path</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Methods</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Quota (limit / interval / unit)</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Ações</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.map((r, idx)=>(
-                          <tr key={idx} style={{borderTop:'1px solid var(--border)'}}>
-                            <td style={{padding:'8px 6px'}}>{r.apiSource}</td>
-                            <td style={{padding:'8px 6px', fontFamily:'monospace'}}>{r.resource}</td>
-                            <td style={{padding:'8px 6px'}}>{r.methods.join(", ")}</td>
-                            <td style={{padding:'8px 6px'}}>
-                              <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+                          <tr key={`${r.apiSource}-${r.resource}-${idx}`} style={{borderTop:'1px solid var(--border)'}}>
+                            <td style={{padding:'6px'}}>{r.apiSource}</td>
+                            <td style={{padding:'6px', fontFamily:'monospace'}}>{r.resource}</td>
+                            <td style={{padding:'6px'}}>{r.methods.join(", ")}</td>
+                            <td style={{padding:'6px'}}>
+                              <div style={{display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
                                 <input
-                                  style={{width:90}}
+                                  style={{width:84}}
                                   placeholder="limit"
-                                  defaultValue={r.quota?.limit || ""}
-                                  onBlur={(e)=>{
-                                    const q = { limit: e.currentTarget.value || undefined, interval: r.quota?.interval, timeUnit: r.quota?.timeUnit||"MINUTE" as const };
-                                    changeQuotaForApiSource(r.apiSource, q);
-                                  }}
+                                  value={quotaEdits[r.apiSource]?.limit ?? (r.quota?.limit || "")}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: e.currentTarget.value }}))}
                                 />
                                 <input
-                                  style={{width:90}}
+                                  style={{width:84}}
                                   placeholder="interval"
-                                  defaultValue={r.quota?.interval || ""}
-                                  onBlur={(e)=>{
-                                    const q = { limit: r.quota?.limit, interval: e.currentTarget.value || undefined, timeUnit: r.quota?.timeUnit||"MINUTE" as const };
-                                    changeQuotaForApiSource(r.apiSource, q);
-                                  }}
+                                  value={quotaEdits[r.apiSource]?.interval ?? (r.quota?.interval || "")}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: e.currentTarget.value }}))}
                                 />
                                 <select
-                                  defaultValue={r.quota?.timeUnit || "MINUTE"}
-                                  onChange={(e)=>{
-                                    const q = { limit: r.quota?.limit, interval: r.quota?.interval, timeUnit: e.currentTarget.value as Quota["timeUnit"] };
-                                    changeQuotaForApiSource(r.apiSource, q);
-                                  }}
+                                  value={quotaEdits[r.apiSource]?.timeUnit ?? (r.quota?.timeUnit || "MINUTE")}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: e.currentTarget.value as Quota["timeUnit"] }}))}
                                 >
                                   <option value="SECOND">SECOND</option>
                                   <option value="MINUTE">MINUTE</option>
                                   <option value="HOUR">HOUR</option>
                                   <option value="DAY">DAY</option>
                                 </select>
+                                <button
+                                  style={{...btnPrimary, padding:"6px 10px"}}
+                                  onClick={()=> saveQuotaForApiSource(r.apiSource)}
+                                  title="Salvar quota deste proxy"
+                                >
+                                  Salvar quota
+                                </button>
                               </div>
                             </td>
-                            <td style={{padding:'8px 6px'}}>
+                            <td style={{padding:'6px'}}>
                               <button
                                 style={{...btnDanger, padding:"6px 10px"}}
                                 onClick={()=> removeOperation({ apiSource:r.apiSource, resource:r.resource })}
@@ -408,13 +477,18 @@ export default function ProductsPage() {
                 )}
               </div>
 
-              <div className="card" style={{padding:12}}>
+              <div className="card" style={{padding:10}}>
                 <h4 style={{margin:'0 0 8px'}}>Adicionar operation</h4>
+
                 <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
                   <label>API Proxy
                     <select value={addProxy} onChange={e=>setAddProxy(e.target.value)}>
                       <option value="">Selecione…</option>
-                      {proxies.map(p=>(<option key={p} value={p}>{p}</option>))}
+                      {proxies.map(p=>(
+                        <option key={p.name} value={p.name}>
+                          {p.name}{p.basepaths && p.basepaths.length ? ` — ${p.basepaths.join(", ")}` : ""}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label>Path (resource)
@@ -451,7 +525,7 @@ export default function ProductsPage() {
                   </div>
                 </div>
 
-                <div style={{marginTop:10}}>
+                <div style={{marginTop:8}}>
                   <button style={btnPrimary} onClick={addOperation}>Adicionar</button>
                 </div>
               </div>
