@@ -20,7 +20,7 @@ type ApiProduct = {
   operationGroup?: OperationGroup;
 };
 
-type ProxyOption = { name: string; basepaths?: string[] };
+type BasepathDTO = { name: string; basePath: string; revision?: string };
 
 async function fetchJson<T=any>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -47,37 +47,6 @@ function normalizeProductNames(input: any): string[] {
     }
   }
   return Array.from(out);
-}
-
-function normalizeProxies(input: any): ProxyOption[] {
-  const out: ProxyOption[] = [];
-  const add = (name: string, basepaths?: string[]) => {
-    if (!name) return;
-    out.push({ name, basepaths: basepaths && basepaths.length ? basepaths : undefined });
-  };
-
-  if (input && Array.isArray(input.proxies)) {
-    for (const p of input.proxies) {
-      const name = typeof p === "string" ? p : String(p?.name || "");
-      const bps = Array.isArray(p?.basepaths) ? p.basepaths.filter((x: any)=> typeof x === "string" && x.trim()) : undefined;
-      add(name, bps);
-    }
-    return out;
-  }
-
-  if (Array.isArray(input?.names)) {
-    for (const n of input.names) add(String(n || ""));
-    return out;
-  }
-
-  if (Array.isArray(input)) {
-    for (const it of input) {
-      if (typeof it === "string") add(it);
-      else if (it && typeof it.name === "string") add(it.name, Array.isArray(it.basepaths) ? it.basepaths : undefined);
-    }
-  }
-
-  return out;
 }
 
 const btnBase: React.CSSProperties = {
@@ -120,10 +89,12 @@ export default function ProductsPage() {
   const [err, setErr] = useState("");
 
   const [checks, setChecks] = useState<Record<string, boolean>>({});
-  const [proxies, setProxies] = useState<ProxyOption[]>([]);
+
+  // basepaths ativos no env e seleção do basePath
+  const [basepaths, setBasepaths] = useState<BasepathDTO[]>([]);
+  const [selectedBasepath, setSelectedBasepath] = useState<string>("");
 
   // add operation form
-  const [addProxy, setAddProxy] = useState("");
   const [addPath, setAddPath] = useState("");
   const [addMethods, setAddMethods] = useState<Method[]>([]);
   const [addLimit, setAddLimit] = useState("");
@@ -137,20 +108,20 @@ export default function ProductsPage() {
     fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
   }, []);
 
-useEffect(() => {
-  if (!org) { setEnv(""); setEnvs([]); return; }
-  const ac = new AbortController();
-  (async () => {
-    try {
-      const r = await fetch(`/api/envs?org=${encodeURIComponent(org)}`, { signal: ac.signal });
-      const data = await r.json();
-      setEnvs(data);
-    } catch {
-      if (!ac.signal.aborted) setEnvs([]);
-    }
-  })();
-  return () => ac.abort();
-}, [org]);
+  useEffect(() => {
+    if (!org) { setEnv(""); setEnvs([]); return; }
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const r = await fetch(`/api/envs?org=${encodeURIComponent(org)}`, { signal: ac.signal });
+        const data = await r.json();
+        setEnvs(data);
+      } catch {
+        if (!ac.signal.aborted) setEnvs([]);
+      }
+    })();
+    return () => ac.abort();
+  }, [org]);
 
   async function loadProducts() {
     if (!org) return;
@@ -171,14 +142,21 @@ useEffect(() => {
     }
   }
 
-  async function loadProxies() {
-    if (!org) return;
+  async function loadBasepaths() {
+    if (!org || !env) { setBasepaths([]); setSelectedBasepath(""); return; }
     try {
-      const qs = `?org=${encodeURIComponent(org)}${env ? `&env=${encodeURIComponent(env)}` : ""}`;
-      const j = await fetchJson<any>(`/api/apis${qs}`);
-      setProxies(normalizeProxies(j));
+      const qs = `?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`;
+      const list = await fetchJson<BasepathDTO[]>(`/api/basepaths${qs}`);
+      const safe = (Array.isArray(list) ? list : []).map(x => ({
+        name: String(x?.name ?? ""),
+        basePath: String(x?.basePath ?? ""),
+        revision: x?.revision ? String(x.revision) : undefined,
+      })).filter(x => x.name && x.basePath);
+      setBasepaths(safe);
+      if (safe.length && !selectedBasepath) setSelectedBasepath(safe[0].basePath);
     } catch {
-      setProxies([]);
+      setBasepaths([]);
+      setSelectedBasepath("");
     }
   }
 
@@ -200,11 +178,21 @@ useEffect(() => {
       }
       setQuotaEdits(seed);
 
-      await loadProxies();
+      await loadBasepaths();
     } catch (e:any) {
       setErr(e.message || String(e));
     }
   }
+
+  // Recarrega basepaths quando o env muda (se já há product selecionado)
+  useEffect(() => {
+    if (selected) {
+      loadBasepaths();
+    } else {
+      setBasepaths([]);
+      setSelectedBasepath("");
+    }
+  }, [env]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered: string[] = useMemo(() => {
     const t = (q || "").toLowerCase();
@@ -284,19 +272,31 @@ useEffect(() => {
 
   async function addOperation() {
     if (!detail || !selected) return;
-    if (!addProxy || !addPath.trim() || addMethods.length===0) {
-      alert("Selecione a API proxy, informe o path e pelo menos um método.");
+    if (!selectedBasepath || !addPath.trim() || addMethods.length===0) {
+      alert("Selecione a API proxy (basePath), informe o path e pelo menos um método.");
       return;
     }
+
+    // Descobre o proxy name a partir do basePath selecionado
+    const bp = basepaths.find(x => x.basePath === selectedBasepath);
+    const proxyName = bp?.name || "";
+    if (!proxyName) {
+      alert("Não foi possível resolver o nome do proxy para o basePath selecionado.");
+      return;
+    }
+
     const rows = opRowsFromDetail(detail);
     rows.push({
-      apiSource: addProxy,
+      apiSource: proxyName,
       resource: addPath.trim(),
       methods: addMethods,
-      quota: (addLimit || addInterval || addTimeUnit) ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit:addTimeUnit } : undefined,
+      quota: (addLimit || addInterval || addTimeUnit)
+        ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit:addTimeUnit }
+        : undefined,
     });
     const newOg = toOperationGroup(rows);
     await applyOpGroup(newOg);
+
     setAddPath(""); setAddMethods([]);
   }
 
@@ -452,7 +452,7 @@ useEffect(() => {
                                 />
                                 <select
                                   value={quotaEdits[r.apiSource]?.timeUnit ?? (r.quota?.timeUnit || "MINUTE")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: e.currentTarget.value as Quota["timeUnit"] }}))}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: e.target.value as Quota["timeUnit"] }}))}
                                 >
                                   <option value="SECOND">SECOND</option>
                                   <option value="MINUTE">MINUTE</option>
@@ -490,11 +490,15 @@ useEffect(() => {
 
                 <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
                   <label>API Proxy
-                    <select value={addProxy} onChange={e=>setAddProxy(e.target.value)}>
-                      <option value="">Selecione…</option>
-                      {proxies.map(p=>(
-                        <option key={p.name} value={p.name}>
-                          {p.name}{p.basepaths && p.basepaths.length ? ` — ${p.basepaths.join(", ")}` : ""}
+                    <select
+                      value={selectedBasepath}
+                      onChange={e=>setSelectedBasepath(e.target.value)}
+                      disabled={!env}
+                    >
+                      <option value="">{env ? "Selecione…" : "Selecione um env"}</option>
+                      {basepaths.map(p=>(
+                        <option key={`${p.name}:${p.basePath}`} value={p.basePath}>
+                          {p.name} — {p.basePath}{p.revision ? ` (rev ${p.revision})` : ""}
                         </option>
                       ))}
                     </select>
