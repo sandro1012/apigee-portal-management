@@ -1,21 +1,13 @@
 // app/api/basepaths/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-// 1) Tenta usar seu util (se existir). Se não existir no build, seguimos sem ele.
-let resolveAppFn: null | ((org: string) => Promise<{ accessToken?: string; managementBase?: string }>) = null;
-try {
-  // ajuste o caminho se você não usa alias "@"
-  // Se seu projeto tem alias "@", pode usar: import resolveApp from "@/lib/util/resolveApp"
-  // Aqui uso relativo para evitar problemas de alias em build:
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const mod = require("../../lib/util/resolveApp");
-  resolveAppFn = (mod?.default || mod?.resolveApp) as any;
-} catch {
-  resolveAppFn = null;
-}
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 type BasepathDTO = { name: string; basePath: string; revision?: string };
-type DeployItem = { apiProxy?: string; revision?: string | number; basePath?: string; environment?: string };
+type DeployItem = { apiProxy?: string; revision?: string|number; basePath?: string; environment?: string };
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,47 +18,50 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing org/env" }, { status: 400 });
     }
 
-    // 2) Descobre base e token
-    const envBase = process.env.APIGEE_BASE?.trim() || "https://apigee.googleapis.com";
-    let accessToken = (process.env.APIGEE_TOKEN || "").trim();
+    const mgmtBase = (process.env.APIGEE_BASE?.trim() || "https://apigee.googleapis.com").replace(/\/+$/, "");
+    const url = `${mgmtBase}/v1/organizations/${encodeURIComponent(org)}/environments/${encodeURIComponent(env)}/deployments`;
 
-    if (resolveAppFn) {
-      try {
-        const { accessToken: t, managementBase } = await resolveAppFn(org);
-        accessToken = (t || accessToken || "").trim();
-        // Se seu resolveApp devolver uma base customizada, respeita:
-        if (managementBase) {
-          // se vier algo tipo https://apigee.googleapis.com
-          // sobrepõe apenas se não há APIGEE_BASE definido
-        }
-      } catch {
-        // segue com APIGEE_TOKEN se existir
-      }
+    // ===== Token sources (ordem de prioridade) =====
+    // 1) Authorization header (se já veio)
+    let bearer = "";
+    const hdr = req.headers.get("authorization");
+    if (hdr && /^Bearer\s+/i.test(hdr)) bearer = hdr.replace(/^Bearer\s+/i, "").trim();
+
+    // 2) Cookie gcp_token (definido pelo seu /api/auth/token)
+    if (!bearer) {
+      const c = cookies();
+      const fromCookie = c.get("gcp_token")?.value?.trim();
+      if (fromCookie) bearer = fromCookie;
     }
 
-    if (!accessToken) {
+    // 3) Variável de ambiente (fallback)
+    if (!bearer) {
+      const fromEnv = process.env.APIGEE_TOKEN?.trim();
+      if (fromEnv) bearer = fromEnv;
+    }
+
+    if (!bearer) {
       return NextResponse.json(
-        { error: "missing access token", hint: "Defina APIGEE_TOKEN na Vercel ou faça resolveApp(org) retornar accessToken." },
+        { error: "missing access token", hint: "Faça POST em /api/auth/token (ou envie Authorization: Bearer ..., ou configure APIGEE_TOKEN)." },
         { status: 401 }
       );
     }
 
-    // 3) Chama deployments do env
-    const url = `${envBase.replace(/\/+$/, "")}/v1/organizations/${encodeURIComponent(org)}/environments/${encodeURIComponent(env)}/deployments`;
-
+    // ===== Chamada à Management API =====
     const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${bearer}` },
       cache: "no-store",
     });
 
     if (!r.ok) {
       const txt = await r.text();
-      return NextResponse.json({ error: "Apigee error", details: txt }, { status: r.status });
+      // Repasse o status e detalhes para depuração (sem expor o token)
+      return NextResponse.json({ error: "Apigee error", status: r.status, details: txt }, { status: r.status });
     }
 
     const json: any = await r.json();
 
-    // 4) Normaliza
+    // ===== Normalização =====
     const items: DeployItem[] = [];
     if (Array.isArray(json?.deployments)) items.push(...json.deployments);
     else if (Array.isArray(json)) items.push(...json);
@@ -90,7 +85,11 @@ export async function GET(req: NextRequest) {
       (a.name + a.basePath).localeCompare(b.name + b.basePath)
     );
 
-    return NextResponse.json(out);
+    return NextResponse.json(out, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "unexpected error" }, { status: 500 });
   }
