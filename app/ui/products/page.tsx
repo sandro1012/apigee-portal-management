@@ -137,12 +137,20 @@ export default function ProductsPage() {
     fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
   }, []);
 
-  useEffect(() => {
-    if (!org) { setEnv(""); setEnvs([]); return; }
-    fetch(`/api/envs?org=${encodeURIComponent(org)}`)
-      .then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]);
-    );
-  }, [org]);
+useEffect(() => {
+  if (!org) { setEnv(""); setEnvs([]); return; }
+  const ac = new AbortController();
+  (async () => {
+    try {
+      const r = await fetch(`/api/envs?org=${encodeURIComponent(org)}`, { signal: ac.signal });
+      const data = await r.json();
+      setEnvs(data);
+    } catch {
+      if (!ac.signal.aborted) setEnvs([]);
+    }
+  })();
+  return () => ac.abort();
+}, [org]);
 
   async function loadProducts() {
     if (!org) return;
