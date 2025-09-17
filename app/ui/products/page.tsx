@@ -20,7 +20,8 @@ type ApiProduct = {
   operationGroup?: OperationGroup;
 };
 
-type BasepathDTO = { name: string; basePath: string; revision?: string };
+// Pode ou não ter basePath (fallback via /api/apis não tem)
+type BasepathDTO = { name: string; basePath?: string; revision?: string };
 
 async function fetchJson<T=any>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -90,9 +91,10 @@ export default function ProductsPage() {
 
   const [checks, setChecks] = useState<Record<string, boolean>>({});
 
-  // basepaths ativos no env e seleção do basePath
+  // basepaths/proxies para o combo (com fallback)
   const [basepaths, setBasepaths] = useState<BasepathDTO[]>([]);
-  const [selectedBasepath, setSelectedBasepath] = useState<string>("");
+  // valor do option codificado "name||basePath"
+  const [selectedProxyRef, setSelectedProxyRef] = useState<string>("");
 
   // add operation form
   const [addPath, setAddPath] = useState("");
@@ -142,21 +144,57 @@ export default function ProductsPage() {
     }
   }
 
+  // Fallback robusto: tenta /api/basepaths; se vier vazio, usa /api/apis para listar nomes
   async function loadBasepaths() {
-    if (!org || !env) { setBasepaths([]); setSelectedBasepath(""); return; }
+    setBasepaths([]);
+    setSelectedProxyRef("");
+    if (!org || !env) return;
+
     try {
       const qs = `?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`;
-      const list = await fetchJson<BasepathDTO[]>(`/api/basepaths${qs}`);
-      const safe = (Array.isArray(list) ? list : []).map(x => ({
-        name: String(x?.name ?? ""),
-        basePath: String(x?.basePath ?? ""),
-        revision: x?.revision ? String(x.revision) : undefined,
-      })).filter(x => x.name && x.basePath);
-      setBasepaths(safe);
-      if (safe.length && !selectedBasepath) setSelectedBasepath(safe[0].basePath);
+      const list = await fetchJson<any[]>(`/api/basepaths${qs}`);
+      const arr = Array.isArray(list) ? list : [];
+      const withBP: BasepathDTO[] = arr
+        .map((x: any) => ({
+          name: String(x?.name ?? ""),
+          basePath: x?.basePath ? String(x.basePath) : undefined,
+          revision: x?.revision ? String(x.revision) : undefined,
+        }))
+        .filter((x) => x.name);
+      if (withBP.length > 0) {
+        setBasepaths(withBP);
+        // seleciona o 1º
+        const first = withBP[0];
+        setSelectedProxyRef(`${first.name}||${first.basePath ?? ""}`);
+        return;
+      }
+    } catch {
+      // ignore; cai pro fallback
+    }
+
+    // Fallback: usa /api/apis (lista de proxies por nome)
+    try {
+      const qs = `?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`;
+      const apis = await fetchJson<any>(`/api/apis${qs}`);
+      let names: string[] = [];
+
+      if (Array.isArray(apis?.proxies)) {
+        names = apis.proxies
+          .map((p: any) => (typeof p === "string" ? p : String(p?.name || "")))
+          .filter(Boolean);
+      } else if (Array.isArray(apis)) {
+        names = apis
+          .map((p: any) => (typeof p === "string" ? p : String(p?.name || "")))
+          .filter(Boolean);
+      }
+
+      const uniq = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+      const dto = uniq.map((name) => ({ name } as BasepathDTO));
+      setBasepaths(dto);
+      if (dto.length) setSelectedProxyRef(`${dto[0].name}||`);
     } catch {
       setBasepaths([]);
-      setSelectedBasepath("");
+      setSelectedProxyRef("");
     }
   }
 
@@ -190,9 +228,10 @@ export default function ProductsPage() {
       loadBasepaths();
     } else {
       setBasepaths([]);
-      setSelectedBasepath("");
+      setSelectedProxyRef("");
     }
-  }, [env]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [env]);
 
   const filtered: string[] = useMemo(() => {
     const t = (q || "").toLowerCase();
@@ -272,23 +311,23 @@ export default function ProductsPage() {
 
   async function addOperation() {
     if (!detail || !selected) return;
-    if (!selectedBasepath || !addPath.trim() || addMethods.length===0) {
-      alert("Selecione a API proxy (basePath), informe o path e pelo menos um método.");
+    if (!selectedProxyRef || !addPath.trim() || addMethods.length===0) {
+      alert("Selecione a API proxy, informe o path e pelo menos um método.");
       return;
     }
 
-    // Descobre o proxy name a partir do basePath selecionado
-    const bp = basepaths.find(x => x.basePath === selectedBasepath);
-    const proxyName = bp?.name || "";
-    if (!proxyName) {
-      alert("Não foi possível resolver o nome do proxy para o basePath selecionado.");
+    // selectedProxyRef tem o formato "name||basePath"
+    const [proxyName, basePathSel] = selectedProxyRef.split("||");
+    const apiSource = (proxyName || "").trim();
+    if (!apiSource) {
+      alert("Não foi possível resolver o nome do proxy selecionado.");
       return;
     }
 
     const rows = opRowsFromDetail(detail);
     rows.push({
-      apiSource: proxyName,
-      resource: addPath.trim(),
+      apiSource,
+      resource: addPath.trim(), // se quiser prefixar com basePathSel, faça `${basePathSel || ""}${addPath.trim()}`
       methods: addMethods,
       quota: (addLimit || addInterval || addTimeUnit)
         ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit:addTimeUnit }
@@ -491,14 +530,17 @@ export default function ProductsPage() {
                 <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
                   <label>API Proxy
                     <select
-                      value={selectedBasepath}
-                      onChange={e=>setSelectedBasepath(e.target.value)}
+                      value={selectedProxyRef}
+                      onChange={e=>setSelectedProxyRef(e.target.value)}
                       disabled={!env}
                     >
                       <option value="">{env ? "Selecione…" : "Selecione um env"}</option>
                       {basepaths.map(p=>(
-                        <option key={`${p.name}:${p.basePath}`} value={p.basePath}>
-                          {p.name} — {p.basePath}{p.revision ? ` (rev ${p.revision})` : ""}
+                        <option
+                          key={`${p.name}:${p.basePath || ""}`}
+                          value={`${p.name}||${p.basePath || ""}`}
+                        >
+                          {p.basePath ? `${p.name} — ${p.basePath}${p.revision ? ` (rev ${p.revision})` : ""}` : p.name}
                         </option>
                       ))}
                     </select>
