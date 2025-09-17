@@ -1,6 +1,6 @@
 // app/api/apps/new/route.ts
 import { NextResponse } from "next/server";
-import { readBearer } from ".../../lib/util/resolveApp"; // caminho correto (3 níveis)
+import { readBearer } from "../../lib/util/resolveApp"; // caminho correto (3 níveis)
 
 type Attr = { name: string; value: string };
 
