@@ -5,8 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 // --- Tipos mínimos para a UI:
 type Method = "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS";
-// Para evitar conflito de tipos (UI usa UPPERCASE, API exige lowercase),
-// deixamos timeUnit como string e normalizamos na hora de enviar.
+// timeUnit: UI usa UPPERCASE; convertemos para lowercase ao enviar
 type Quota = { limit?: string; interval?: string; timeUnit?: string };
 type Operation = { resource: string; methods: Method[] };
 type OperationConfig = { apiSource: string; operations: Operation[]; quota?: Quota };
@@ -52,7 +51,7 @@ function normalizeProductNames(input: any): string[] {
   return Array.from(out);
 }
 
-// Converte qualquer valor da UI para o formato aceito pela Apigee
+// Converte UI -> formato aceito pela Apigee
 function toApiTimeUnit(u?: string): "second"|"minute"|"hour"|"day"|"month"|"year"|undefined {
   if (!u) return undefined;
   const v = String(u).toLowerCase();
@@ -302,7 +301,7 @@ export default function ProductsPage() {
         ? {
             limit: v.quota.limit,
             interval: v.quota.interval,
-            timeUnit: toApiTimeUnit(v.quota.timeUnit) // << envia em lowercase
+            timeUnit: toApiTimeUnit(v.quota.timeUnit) // lowercase para Apigee
           }
         : undefined,
     }));
@@ -322,7 +321,7 @@ export default function ProductsPage() {
     const qNorm: Quota = {
       limit: qRaw.limit,
       interval: qRaw.interval,
-      timeUnit: toApiTimeUnit(qRaw.timeUnit) // << envia em lowercase
+      timeUnit: toApiTimeUnit(qRaw.timeUnit) // lowercase
     };
     const rows = opRowsFromDetail(detail).map(r => (r.apiSource===apiSource ? { ...r, quota: qNorm } : r));
     const newOg = toOperationGroup(rows);
@@ -347,10 +346,10 @@ export default function ProductsPage() {
     const rows = opRowsFromDetail(detail);
     rows.push({
       apiSource,
-      resource: addPath.trim(), // se quiser prefixar com basePath, faça `${basePathSel || ""}${addPath.trim()}`
+      resource: addPath.trim(),
       methods: addMethods,
       quota: (addLimit || addInterval || addTimeUnit)
-        ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit: toApiTimeUnit(addTimeUnit) } // << lowercase
+        ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit: toApiTimeUnit(addTimeUnit) }
         : undefined,
     });
     const newOg = toOperationGroup(rows);
@@ -419,8 +418,9 @@ export default function ProductsPage() {
                       type="checkbox"
                       checked={filtered.length>0 && filtered.every(n => checks[n])}
                       onChange={e=>{
+                        const checked = e.currentTarget.checked;
                         const all = {...checks};
-                        for (const n of filtered) all[n] = e.currentTarget.checked;
+                        for (const n of filtered) all[n] = checked;
                         setChecks(all);
                       }}
                     />
@@ -501,17 +501,35 @@ export default function ProductsPage() {
                                   style={{width:84}}
                                   placeholder="limit"
                                   value={quotaEdits[r.apiSource]?.limit ?? (r.quota?.limit || "")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: e.currentTarget.value }}))}
+                                  onChange={(e)=>{
+                                    const v = e.currentTarget.value; // captura antes
+                                    setQuotaEdits(prev => ({
+                                      ...prev,
+                                      [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: v }
+                                    }));
+                                  }}
                                 />
                                 <input
                                   style={{width:84}}
                                   placeholder="interval"
                                   value={quotaEdits[r.apiSource]?.interval ?? (r.quota?.interval || "")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: e.currentTarget.value }}))}
+                                  onChange={(e)=>{
+                                    const v = e.currentTarget.value; // captura antes
+                                    setQuotaEdits(prev => ({
+                                      ...prev,
+                                      [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: v }
+                                    }));
+                                  }}
                                 />
                                 <select
                                   value={quotaEdits[r.apiSource]?.timeUnit ?? (r.quota?.timeUnit || "MINUTE")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: e.target.value }}))}
+                                  onChange={(e)=>{
+                                    const v = e.currentTarget.value; // captura antes
+                                    setQuotaEdits(prev => ({
+                                      ...prev,
+                                      [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: v }
+                                    }));
+                                  }}
                                 >
                                   <option value="SECOND">SECOND</option>
                                   <option value="MINUTE">MINUTE</option>
