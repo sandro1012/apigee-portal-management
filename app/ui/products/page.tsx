@@ -115,6 +115,11 @@ export default function ProductsPage() {
   // quota edição explícita por proxy (apiSource)
   const [quotaEdits, setQuotaEdits] = useState<Record<string, Quota>>({});
 
+  // novo API Product
+  const [newName, setNewName] = useState("");
+  const [newDisplay, setNewDisplay] = useState("");
+  const [newApproval, setNewApproval] = useState("auto");
+
   useEffect(() => {
     fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
   }, []);
@@ -375,6 +380,32 @@ export default function ProductsPage() {
     alert("Concluído (verifique a lista).");
   }
 
+  async function createProduct() {
+    if (!org || !newName.trim()) {
+      alert("Informe o org e o nome do novo API Product.");
+      return;
+    }
+    try {
+      const qs = `?org=${encodeURIComponent(org)}`;
+      await fetchJson(`/api/products${qs}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: newName.trim(),
+          displayName: newDisplay || undefined,
+          approvalType: newApproval || "auto"
+        }),
+      });
+      setNewName("");
+      setNewDisplay("");
+      setNewApproval("auto");
+      await loadProducts();
+      alert("API Product criado com sucesso.");
+    } catch (e:any) {
+      alert("Erro ao criar product: " + (e.message || e));
+    }
+  }
+
   const rows = detail ? opRowsFromDetail(detail) : [];
 
   return (
@@ -443,6 +474,20 @@ export default function ProductsPage() {
               </tbody>
             </table>
           )}
+
+          {/* Criar novo API Product */}
+          <div style={{marginTop:12, padding:10, borderTop:"1px solid var(--border)"}}>
+            <h4 style={{margin:"4px 0"}}>Novo API Product</h4>
+            <div style={{display:"grid", gap:6, gridTemplateColumns:"1fr 1fr 1fr auto"}}>
+              <input placeholder="name" value={newName} onChange={e=>setNewName(e.target.value)} />
+              <input placeholder="displayName (opcional)" value={newDisplay} onChange={e=>setNewDisplay(e.target.value)} />
+              <select value={newApproval} onChange={e=>setNewApproval(e.target.value)}>
+                <option value="auto">auto</option>
+                <option value="manual">manual</option>
+              </select>
+              <button style={btnPrimary} onClick={createProduct} disabled={!org || !newName.trim()}>Criar</button>
+            </div>
+          </div>
         </div>
 
         {/* Detalhe */}
@@ -502,7 +547,7 @@ export default function ProductsPage() {
                                   placeholder="limit"
                                   value={quotaEdits[r.apiSource]?.limit ?? (r.quota?.limit || "")}
                                   onChange={(e)=>{
-                                    const v = e.currentTarget.value; // captura antes
+                                    const v = e.currentTarget.value;
                                     setQuotaEdits(prev => ({
                                       ...prev,
                                       [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: v }
@@ -514,7 +559,7 @@ export default function ProductsPage() {
                                   placeholder="interval"
                                   value={quotaEdits[r.apiSource]?.interval ?? (r.quota?.interval || "")}
                                   onChange={(e)=>{
-                                    const v = e.currentTarget.value; // captura antes
+                                    const v = e.currentTarget.value;
                                     setQuotaEdits(prev => ({
                                       ...prev,
                                       [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: v }
@@ -524,7 +569,7 @@ export default function ProductsPage() {
                                 <select
                                   value={quotaEdits[r.apiSource]?.timeUnit ?? (r.quota?.timeUnit || "MINUTE")}
                                   onChange={(e)=>{
-                                    const v = e.currentTarget.value; // captura antes
+                                    const v = e.currentTarget.value;
                                     setQuotaEdits(prev => ({
                                       ...prev,
                                       [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: v }
