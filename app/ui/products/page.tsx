@@ -59,6 +59,17 @@ function toApiTimeUnit(u?: string): "second"|"minute"|"hour"|"day"|"month"|"year
   return undefined;
 }
 
+// Sanitiza name para o formato aceito pela Apigee (sem espaços)
+function sanitizeProductName(input: string): string {
+  return input
+    .trim()
+    .replace(/\s+/g, "-")            // espaços -> hífen
+    .replace(/[^A-Za-z0-9-_]/g, "")  // remove chars inválidos
+    .replace(/-{2,}/g, "-")          // hífens repetidos -> 1
+    .replace(/^[-_]+|[-_]+$/g, "")   // remove hífen/underscore no início/fim
+    .toLowerCase();
+}
+
 const btnBase: React.CSSProperties = {
   borderRadius: 8,
   padding: "8px 12px",
@@ -385,14 +396,22 @@ export default function ProductsPage() {
       alert("Informe o org e o nome do novo API Product.");
       return;
     }
+    // Apigee não aceita espaços no 'name' -> sanitizamos
+    const id = sanitizeProductName(newName);
+    if (!id) {
+      alert("Nome inválido após sanitização. Use letras, números, hífen ou underscore.");
+      return;
+    }
     try {
       const qs = `?org=${encodeURIComponent(org)}`;
       await fetchJson(`/api/products${qs}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          name: newName.trim(),
-          displayName: newDisplay || undefined,
+          // alguns backends exigem org no corpo; enviamos nos dois lugares (query e body)
+          org,
+          name: id,
+          displayName: newDisplay || newName.trim(),
           approvalType: newApproval || "auto"
         }),
       });
@@ -479,7 +498,7 @@ export default function ProductsPage() {
           <div style={{marginTop:12, padding:10, borderTop:"1px solid var(--border)"}}>
             <h4 style={{margin:"4px 0"}}>Novo API Product</h4>
             <div style={{display:"grid", gap:6, gridTemplateColumns:"1fr 1fr 1fr auto"}}>
-              <input placeholder="name" value={newName} onChange={e=>setNewName(e.target.value)} />
+              <input placeholder="name (ex.: scope-teste)" value={newName} onChange={e=>setNewName(e.target.value)} />
               <input placeholder="displayName (opcional)" value={newDisplay} onChange={e=>setNewDisplay(e.target.value)} />
               <select value={newApproval} onChange={e=>setNewApproval(e.target.value)}>
                 <option value="auto">auto</option>
