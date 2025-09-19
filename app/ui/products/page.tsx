@@ -70,6 +70,10 @@ function sanitizeProductName(input: string): string {
     .toLowerCase();
 }
 
+function mapAccess(v: string): "Public"|"Private" {
+  return String(v).toLowerCase()==="private" ? "Private" : "Public";
+}
+
 const btnBase: React.CSSProperties = {
   borderRadius: 8,
   padding: "8px 12px",
@@ -129,7 +133,11 @@ export default function ProductsPage() {
   // novo API Product
   const [newName, setNewName] = useState("");
   const [newDisplay, setNewDisplay] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newApproval, setNewApproval] = useState("auto");
+  const [newAccess, setNewAccess] = useState<"Public"|"Private">("Public");
+  const [newScopesText, setNewScopesText] = useState("");
+  const [newEnvs, setNewEnvs] = useState<string[]>([]);
   const creatingRef = useRef(false); // guarda contra double-click
 
   useEffect(() => {
@@ -150,6 +158,14 @@ export default function ProductsPage() {
     })();
     return () => ac.abort();
   }, [org]);
+
+  // quando mudar env/ envs, por padrão seleciona o env atual para o novo product (se não houver seleção manual)
+  useEffect(() => {
+    if (env && (newEnvs.length===0 || (newEnvs.length===1 && newEnvs[0]!==env))) {
+      setNewEnvs([env]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [env, envs.length]);
 
   async function loadProducts() {
     if (!org) return;
@@ -392,9 +408,18 @@ export default function ProductsPage() {
     alert("Concluído (verifique a lista).");
   }
 
+  function parseScopes(txt: string): string[]|undefined {
+    const arr = txt.split(/[,;\n]/g).map(s=>s.trim()).filter(Boolean);
+    return arr.length ? arr : undefined;
+  }
+
   async function createProductRequest() {
-    if (!org || !newName.trim()) {
-      alert("Informe o org e o nome do novo API Product.");
+    if (!org) {
+      alert("Selecione uma org.");
+      return;
+    }
+    if (!newName.trim() || !newDisplay.trim() || !newDescription.trim()) {
+      alert("Preencha name, displayName e description.");
       return;
     }
     const id = sanitizeProductName(newName);
@@ -402,23 +427,36 @@ export default function ProductsPage() {
       alert("Nome inválido após sanitização. Use letras, números, hífen ou underscore.");
       return;
     }
+
+    const body: any = {
+      org,
+      name: id,
+      displayName: newDisplay.trim(),
+      description: newDescription.trim(),
+      approvalType: newApproval || "auto",
+      attributes: [{ name: "access", value: mapAccess(newAccess) }],
+    };
+
+    const envsToSend = (newEnvs && newEnvs.length) ? newEnvs : (env ? [env] : []);
+    if (envsToSend.length) body.environments = envsToSend;
+
+    const scopes = parseScopes(newScopesText);
+    if (scopes) body.scopes = scopes;
+
     await fetchJson(`/api/products?org=${encodeURIComponent(org)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        org,
-        name: id,
-        displayName: newDisplay || newName.trim(),
-        approvalType: newApproval || "auto"
-      }),
+      body: JSON.stringify(body),
     });
   }
 
-  // Bloqueia Enter nos inputs de criação (evita submit implícito em alguns browsers)
-  function preventEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+  // Bloqueia Enter nos inputs de criação (evita submit implícito)
+  function preventEnter(e: React.KeyboardEvent<HTMLInputElement|HTMLTextAreaElement>) {
     if (e.key === "Enter") {
-      e.preventDefault();
-      e.stopPropagation();
+      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     }
   }
 
@@ -431,8 +469,12 @@ export default function ProductsPage() {
       await createProductRequest();
       setNewName("");
       setNewDisplay("");
+      setNewDescription("");
       setNewApproval("auto");
-      await loadProducts(); // isso faz o GET (listagem) – não é refresh da página
+      setNewAccess("Public");
+      setNewScopesText("");
+      setNewEnvs(env ? [env] : []);
+      await loadProducts(); // atualiza grid
       alert("API Product criado com sucesso.");
     } catch (err: any) {
       alert("Erro ao criar product: " + (err?.message || String(err)));
@@ -447,7 +489,7 @@ export default function ProductsPage() {
     <main>
       <h2>API Products</h2>
 
-      <div className="card" style={{display:'grid', gap:8, maxWidth:860, marginBottom:12}}>
+      <div className="card" style={{display:'grid', gap:8, maxWidth:980, marginBottom:12}}>
         <label>Org
           <select value={org} onChange={e=>{ setOrg(e.target.value); setEnv(""); }}>
             <option value="">Selecione...</option>
@@ -467,7 +509,7 @@ export default function ProductsPage() {
         {err && <div style={{color:"#ef4444"}}>Erro: {err}</div>}
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(420px, 46%)', gap:12}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr minmax(460px, 46%)', gap:12}}>
         {/* Lista */}
         <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
@@ -510,34 +552,92 @@ export default function ProductsPage() {
             </table>
           )}
 
-          {/* Criar novo API Product (sem <form>) */}
+          {/* Criar novo API Product */}
           <div style={{marginTop:12, padding:10, borderTop:"1px solid var(--border)"}}>
             <h4 style={{margin:"4px 0"}}>Novo API Product</h4>
-            <div style={{display:"grid", gap:6, gridTemplateColumns:"1fr 1fr 1fr auto"}}>
-              <input
-                placeholder="name (ex.: scope-teste)"
-                value={newName}
-                onChange={e=>setNewName(e.target.value)}
-                onKeyDown={preventEnter}
-              />
-              <input
-                placeholder="displayName (opcional)"
-                value={newDisplay}
-                onChange={e=>setNewDisplay(e.target.value)}
-                onKeyDown={preventEnter}
-              />
-              <select value={newApproval} onChange={e=>setNewApproval(e.target.value)}>
-                <option value="auto">auto</option>
-                <option value="manual">manual</option>
-              </select>
-              <button
-                type="button"
-                style={btnPrimary}
-                disabled={!org || !newName.trim() || creatingRef.current}
-                onClick={handleCreateClick}
-              >
-                Criar
-              </button>
+
+            <div style={{display:"grid", gap:8, gridTemplateColumns:"1fr 1fr"}}>
+              <label>
+                <div className="small" style={{opacity:.8}}>name *</div>
+                <input
+                  placeholder="ex.: scope-teste"
+                  value={newName}
+                  onChange={e=>setNewName(e.target.value)}
+                  onKeyDown={preventEnter}
+                />
+              </label>
+              <label>
+                <div className="small" style={{opacity:.8}}>displayName *</div>
+                <input
+                  placeholder="ex.: scope teste"
+                  value={newDisplay}
+                  onChange={e=>setNewDisplay(e.target.value)}
+                  onKeyDown={preventEnter}
+                />
+              </label>
+              <label style={{gridColumn:'1 / -1'}}>
+                <div className="small" style={{opacity:.8}}>description *</div>
+                <textarea
+                  placeholder="Descrição do produto…"
+                  value={newDescription}
+                  onChange={e=>setNewDescription(e.target.value)}
+                  onKeyDown={preventEnter}
+                  rows={3}
+                  style={{width:"100%"}}
+                />
+              </label>
+
+              <label>
+                <div className="small" style={{opacity:.8}}>approvalType</div>
+                <select value={newApproval} onChange={e=>setNewApproval(e.target.value)}>
+                  <option value="auto">auto</option>
+                  <option value="manual">manual</option>
+                </select>
+              </label>
+              <label>
+                <div className="small" style={{opacity:.8}}>attributes.access</div>
+                <select value={newAccess} onChange={e=>setNewAccess(e.target.value as any)}>
+                  <option value="Public">Public</option>
+                  <option value="Private">Private</option>
+                </select>
+              </label>
+
+              <label>
+                <div className="small" style={{opacity:.8}}>scopes (opcional)</div>
+                <input
+                  placeholder="escopo1, escopo2"
+                  value={newScopesText}
+                  onChange={e=>setNewScopesText(e.target.value)}
+                  onKeyDown={preventEnter}
+                />
+              </label>
+              <label>
+                <div className="small" style={{opacity:.8}}>environments (opcional)</div>
+                <select
+                  multiple
+                  size={Math.min(6, Math.max(2, envs.length || 2))}
+                  value={newEnvs}
+                  onChange={e=>{
+                    const vals = Array.from(e.currentTarget.selectedOptions).map(o=>o.value);
+                    setNewEnvs(vals);
+                  }}
+                >
+                  {envs.map(x=>(
+                    <option key={x} value={x}>{x}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{gridColumn:'1 / -1', display:'flex', gap:8, justifyContent:'flex-end'}}>
+                <button
+                  type="button"
+                  style={btnPrimary}
+                  disabled={!org || !newName.trim() || !newDisplay.trim() || !newDescription.trim() || creatingRef.current}
+                  onClick={handleCreateClick}
+                >
+                  Criar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -570,7 +670,7 @@ export default function ProductsPage() {
 
               <div>
                 <h4 style={{margin:'8px 0'}}>Operations</h4>
-                {/* ... sua tabela de operações permanece igual ... */}
+                {/* ... tabela de operações existente ... */}
               </div>
 
               <div className="card" style={{padding:10}}>
