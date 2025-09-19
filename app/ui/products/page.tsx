@@ -1,7 +1,7 @@
 // app/ui/products/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 
 // --- Tipos mínimos para a UI:
 type Method = "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS";
@@ -130,6 +130,7 @@ export default function ProductsPage() {
   const [newName, setNewName] = useState("");
   const [newDisplay, setNewDisplay] = useState("");
   const [newApproval, setNewApproval] = useState("auto");
+  const creatingRef = useRef(false); // guarda contra double-click
 
   useEffect(() => {
     fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
@@ -413,20 +414,31 @@ export default function ProductsPage() {
     });
   }
 
-  function handleCreateSubmit(e: React.FormEvent) {
-    e.preventDefault(); // evita refresh
-    (async () => {
-      try {
-        await createProductRequest();
-        setNewName("");
-        setNewDisplay("");
-        setNewApproval("auto");
-        await loadProducts();
-        alert("API Product criado com sucesso.");
-      } catch (err: any) {
-        alert("Erro ao criar product: " + (err?.message || String(err)));
-      }
-    })();
+  // Bloqueia Enter nos inputs de criação (evita submit implícito em alguns browsers)
+  function preventEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
+  async function handleCreateClick(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    try {
+      await createProductRequest();
+      setNewName("");
+      setNewDisplay("");
+      setNewApproval("auto");
+      await loadProducts(); // isso faz o GET (listagem) – não é refresh da página
+      alert("API Product criado com sucesso.");
+    } catch (err: any) {
+      alert("Erro ao criar product: " + (err?.message || String(err)));
+    } finally {
+      creatingRef.current = false;
+    }
   }
 
   const rows = detail ? opRowsFromDetail(detail) : [];
@@ -498,18 +510,35 @@ export default function ProductsPage() {
             </table>
           )}
 
-          {/* Criar novo API Product */}
+          {/* Criar novo API Product (sem <form>) */}
           <div style={{marginTop:12, padding:10, borderTop:"1px solid var(--border)"}}>
             <h4 style={{margin:"4px 0"}}>Novo API Product</h4>
-            <form onSubmit={handleCreateSubmit} style={{display:"grid", gap:6, gridTemplateColumns:"1fr 1fr 1fr auto"}}>
-              <input placeholder="name (ex.: scope-teste)" value={newName} onChange={e=>setNewName(e.target.value)} />
-              <input placeholder="displayName (opcional)" value={newDisplay} onChange={e=>setNewDisplay(e.target.value)} />
+            <div style={{display:"grid", gap:6, gridTemplateColumns:"1fr 1fr 1fr auto"}}>
+              <input
+                placeholder="name (ex.: scope-teste)"
+                value={newName}
+                onChange={e=>setNewName(e.target.value)}
+                onKeyDown={preventEnter}
+              />
+              <input
+                placeholder="displayName (opcional)"
+                value={newDisplay}
+                onChange={e=>setNewDisplay(e.target.value)}
+                onKeyDown={preventEnter}
+              />
               <select value={newApproval} onChange={e=>setNewApproval(e.target.value)}>
                 <option value="auto">auto</option>
                 <option value="manual">manual</option>
               </select>
-              <button type="submit" style={btnPrimary} disabled={!org || !newName.trim()}>Criar</button>
-            </form>
+              <button
+                type="button"
+                style={btnPrimary}
+                disabled={!org || !newName.trim() || creatingRef.current}
+                onClick={handleCreateClick}
+              >
+                Criar
+              </button>
+            </div>
           </div>
         </div>
 
@@ -541,8 +570,7 @@ export default function ProductsPage() {
 
               <div>
                 <h4 style={{margin:'8px 0'}}>Operations</h4>
-                {/* ... tabela igual ... */}
-                {/* Botões abaixo recebem type="button" */}
+                {/* ... sua tabela de operações permanece igual ... */}
               </div>
 
               <div className="card" style={{padding:10}}>
