@@ -444,19 +444,30 @@ export default function ProductsPage() {
 
       <div className="card" style={{display:'grid', gap:8, maxWidth:980, marginBottom:12}}>
         <label>Org
-          <select value={org} onChange={e=>{ setOrg(e.target.value); setEnv(""); }}>
+          <select
+            value={org}
+            onChange={(e)=>{ const v = e.currentTarget.value; setOrg(v); setEnv(""); }}
+          >
             <option value="">Selecione...</option>
             {orgs.map(o=>(<option key={o} value={o}>{o}</option>))}
           </select>
         </label>
         <label>Env
-          <select value={env} onChange={e=>setEnv(e.target.value)}>
-            <option value="">(opcional) — filtra APIs deployadas</option>
+          <select
+            value={env}
+            onChange={(e)=>{ const v = e.currentTarget.value; setEnv(v); }}
+          >
+            <option value="">Selecione...</option>
             {envs.map(x=>(<option key={x} value={x}>{x}</option>))}
           </select>
         </label>
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
-          <input placeholder="filtrar..." value={q} onChange={e=>setQ(e.target.value)} style={{flex:1}} />
+          <input
+            placeholder="filtrar..."
+            value={q}
+            onChange={(e)=>{ const v = e.currentTarget.value; setQ(v); }}
+            style={{flex:1}}
+          />
         </div>
         {err && <div style={{color:"#ef4444"}}>Erro: {err}</div>}
       </div>
@@ -477,7 +488,7 @@ export default function ProductsPage() {
                     <input
                       type="checkbox"
                       checked={filtered.length>0 && filtered.every(n => checks[n])}
-                      onChange={e=>{
+                      onChange={(e)=>{
                         const checked = e.currentTarget.checked;
                         const all = {...checks};
                         for (const n of filtered) all[n] = checked;
@@ -492,7 +503,11 @@ export default function ProductsPage() {
                 {filtered.map(n=>(
                   <tr key={n} style={{borderTop:'1px solid var(--border)'}}>
                     <td style={{padding:'6px'}}>
-                      <input type="checkbox" checked={!!checks[n]} onChange={e=> setChecks({...checks, [n]: e.currentTarget.checked})} />
+                      <input
+                        type="checkbox"
+                        checked={!!checks[n]}
+                        onChange={(e)=>{ const checked = e.currentTarget.checked; setChecks({...checks, [n]: checked}); }}
+                      />
                     </td>
                     <td style={{padding:'6px', cursor:'pointer'}} onClick={()=>openDetail(n)}>
                       {n}
@@ -511,27 +526,50 @@ export default function ProductsPage() {
             <div style={{display:"grid", gap:8, gridTemplateColumns:"1fr 1fr"}}>
               <label>
                 <div className="small" style={{opacity:.8}}>name *</div>
-                <input placeholder="ex.: scope-teste" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={preventEnter} />
+                <input
+                  placeholder="ex.: scope-teste"
+                  value={newName}
+                  onChange={(e)=>{ const v = e.currentTarget.value; setNewName(v); }}
+                  onKeyDown={preventEnter}
+                />
               </label>
               <label>
                 <div className="small" style={{opacity:.8}}>displayName *</div>
-                <input placeholder="ex.: scope teste" value={newDisplay} onChange={e=>setNewDisplay(e.target.value)} onKeyDown={preventEnter} />
+                <input
+                  placeholder="ex.: scope teste"
+                  value={newDisplay}
+                  onChange={(e)=>{ const v = e.currentTarget.value; setNewDisplay(v); }}
+                  onKeyDown={preventEnter}
+                />
               </label>
               <label style={{gridColumn:'1 / -1'}}>
                 <div className="small" style={{opacity:.8}}>description *</div>
-                <textarea placeholder="Descrição do produto…" value={newDescription} onChange={e=>setNewDescription(e.target.value)} onKeyDown={preventEnter} rows={3} style={{width:"100%"}} />
+                <textarea
+                  placeholder="Descrição do produto…"
+                  value={newDescription}
+                  onChange={(e)=>{ const v = e.currentTarget.value; setNewDescription(v); }}
+                  onKeyDown={preventEnter}
+                  rows={3}
+                  style={{width:"100%"}}
+                />
               </label>
 
               <label>
                 <div className="small" style={{opacity:.8}}>approvalType</div>
-                <select value={newApproval} onChange={e=>setNewApproval(e.target.value)}>
+                <select
+                  value={newApproval}
+                  onChange={(e)=>{ const v = e.currentTarget.value; setNewApproval(v); }}
+                >
                   <option value="auto">auto</option>
                   <option value="manual">manual</option>
                 </select>
               </label>
               <label>
                 <div className="small" style={{opacity:.8}}>attributes.access</div>
-                <select value={newAccess} onChange={e=>setNewAccess(e.target.value as any)}>
+                <select
+                  value={newAccess}
+                  onChange={(e)=>{ const v = e.currentTarget.value as "Public"|"Private"; setNewAccess(v); }}
+                >
                   <option value="Public">Public</option>
                   <option value="Private">Private</option>
                 </select>
@@ -539,7 +577,12 @@ export default function ProductsPage() {
 
               <label>
                 <div className="small" style={{opacity:.8}}>scopes (opcional)</div>
-                <input placeholder="escopo1, escopo2" value={newScopesText} onChange={e=>setNewScopesText(e.target.value)} onKeyDown={preventEnter} />
+                <input
+                  placeholder="escopo1, escopo2"
+                  value={newScopesText}
+                  onChange={(e)=>{ const v = e.currentTarget.value; setNewScopesText(v); }}
+                  onKeyDown={preventEnter}
+                />
               </label>
               <label>
                 <div className="small" style={{opacity:.8}}>environments (opcional)</div>
@@ -547,7 +590,7 @@ export default function ProductsPage() {
                   multiple
                   size={Math.min(6, Math.max(2, envs.length || 2))}
                   value={newEnvs}
-                  onChange={e=>{
+                  onChange={(e)=>{
                     const vals = Array.from(e.currentTarget.selectedOptions).map(o=>o.value);
                     setNewEnvs(vals);
                   }}
@@ -648,17 +691,17 @@ export default function ProductsPage() {
                                   style={{width:84}}
                                   placeholder="limit"
                                   value={quotaEdits[r.apiSource]?.limit ?? (detail ? r.quota?.limit || "" : "")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: e.currentTarget.value }}))}
+                                  onChange={(e)=>{ const v = e.currentTarget.value; setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: v }})); }}
                                 />
                                 <input
                                   style={{width:84}}
                                   placeholder="interval"
                                   value={quotaEdits[r.apiSource]?.interval ?? (detail ? r.quota?.interval || "" : "")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: e.currentTarget.value }}))}
+                                  onChange={(e)=>{ const v = e.currentTarget.value; setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: v }})); }}
                                 />
                                 <select
                                   value={quotaEdits[r.apiSource]?.timeUnit ?? (detail ? (r.quota?.timeUnit || "MINUTE") : "MINUTE")}
-                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: e.target.value as Quota["timeUnit"] }}))}
+                                  onChange={(e)=>{ const v = e.currentTarget.value as Quota["timeUnit"]; setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: v }})); }}
                                 >
                                   <option value="SECOND">SECOND</option>
                                   <option value="MINUTE">MINUTE</option>
@@ -698,7 +741,11 @@ export default function ProductsPage() {
 
                 <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
                   <label>API Proxy
-                    <select value={selectedProxyRef} onChange={e=>setSelectedProxyRef(e.target.value)} disabled={!env}>
+                    <select
+                      value={selectedProxyRef}
+                      onChange={(e)=>{ const v = e.currentTarget.value; setSelectedProxyRef(v); }}
+                      disabled={!env}
+                    >
                       <option value="">{env ? "Selecione…" : "Selecione um env"}</option>
                       {basepaths.map(p=>(
                         <option key={`${p.name}:${p.basePath || ""}`} value={`${p.name}||${p.basePath || ""}`}>
@@ -708,30 +755,50 @@ export default function ProductsPage() {
                     </select>
                   </label>
                   <label>Path (resource)
-                    <input placeholder="/minha/rota" value={addPath} onChange={e=>setAddPath(e.target.value)} />
+                    <input
+                      placeholder="/minha/rota"
+                      value={addPath}
+                      onChange={(e)=>{ const v = e.currentTarget.value; setAddPath(v); }}
+                    />
                   </label>
                 </div>
 
                 <div style={{display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:8, marginTop:8}}>
                   <label>Métodos
-                    <select multiple size={6} value={addMethods as string[]} onChange={e=>{
-                      const vals = Array.from(e.currentTarget.selectedOptions).map(o=>o.value as Method);
-                      setAddMethods(vals);
-                    }}>
+                    <select
+                      multiple
+                      size={6}
+                      value={addMethods as string[]}
+                      onChange={(e)=>{
+                        const vals = Array.from(e.currentTarget.selectedOptions).map(o=>o.value as Method);
+                        setAddMethods(vals);
+                      }}
+                    >
                       {["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"].map(m=>(
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
                   </label>
                   <label>Quota limit
-                    <input placeholder="e.g. 1000" value={addLimit} onChange={e=>setAddLimit(e.target.value)} />
+                    <input
+                      placeholder="e.g. 1000"
+                      value={addLimit}
+                      onChange={(e)=>{ const v = e.currentTarget.value; setAddLimit(v); }}
+                    />
                   </label>
                   <div style={{display:'grid', gap:8}}>
                     <label>Quota interval
-                      <input placeholder="e.g. 1" value={addInterval} onChange={e=>setAddInterval(e.target.value)} />
+                      <input
+                        placeholder="e.g. 1"
+                        value={addInterval}
+                        onChange={(e)=>{ const v = e.currentTarget.value; setAddInterval(v); }}
+                      />
                     </label>
                     <label>Time unit
-                      <select value={addTimeUnit} onChange={e=>setAddTimeUnit(e.target.value as any)}>
+                      <select
+                        value={addTimeUnit}
+                        onChange={(e)=>{ const v = e.currentTarget.value; setAddTimeUnit(v as any); }}
+                      >
                         <option value="SECOND">SECOND</option>
                         <option value="MINUTE">MINUTE</option>
                         <option value="HOUR">HOUR</option>
