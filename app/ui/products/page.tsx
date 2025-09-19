@@ -74,6 +74,7 @@ const btnBase: React.CSSProperties = {
 };
 const btnPrimary: React.CSSProperties = { ...btnBase, background: "#facc15", color: "#111", borderColor: "#eab308" };
 const btnDanger:  React.CSSProperties = { ...btnBase, background: "#ef4444", color: "#fff", borderColor: "#dc2626" };
+const btnNeutral: React.CSSProperties = { ...btnBase, background: "transparent", color: "var(--fg, #eee)" };
 
 export default function ProductsPage() {
   const [orgs, setOrgs] = useState<string[]>([]);
@@ -137,7 +138,7 @@ export default function ProductsPage() {
     return () => ac.abort();
   }, [org]);
 
-  // AUTO-LISTAR products quando org muda (remove o botão "Listar products")
+  // AUTO-LISTAR products quando org muda
   useEffect(() => {
     if (!org) return;
     (async () => { await loadProducts(); })();
@@ -153,7 +154,6 @@ export default function ProductsPage() {
       const names = normalizeProductNames(j);
       setList(names);
       setChecks({});
-      // mantém detail selecionado se ainda existir
       if (selected && !names.includes(selected)) {
         setSelected(""); setDetail(null);
       }
@@ -223,22 +223,64 @@ export default function ProductsPage() {
       .filter(n => n.toLowerCase().includes(t));
   }, [list, q]);
 
-  function opRowsFromDetail(p: ApiProduct): Array<{ apiSource: string; resource: string; methods: Method[]; quota?: Quota; }> {
+  // --------- Parser ROBUSTO de operationGroup ----------
+  function opRowsFromDetail(p: ApiProduct): Array<{
+    apiSource: string;
+    resource: string;
+    methods: Method[];
+    quota?: Quota;
+  }> {
     const rows: Array<{apiSource:string;resource:string;methods:Method[];quota?:Quota}> = [];
-    const og = p.operationGroup;
-    if (og && Array.isArray(og.operationConfigs)) {
-      for (const cfg of og.operationConfigs) {
-        const api = cfg.apiSource; const quota = cfg.quota;
-        for (const op of (cfg.operations||[])) rows.push({ apiSource: api, resource: op.resource, methods: (op.methods||[]) as Method[], quota });
+    const og: any = (p as any)?.operationGroup;
+
+    if (!og || !Array.isArray(og.operationConfigs)) {
+      if (Array.isArray(p.apiResources) && p.apiResources.length>0) {
+        for (const res of p.apiResources) {
+          if (typeof res === "string" && res.trim()) {
+            rows.push({
+              apiSource: "(apiResources)",
+              resource: res,
+              methods: ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"]
+            });
+          }
+        }
       }
       return rows;
     }
-    if (Array.isArray(p.apiResources) && p.apiResources.length>0) {
-      for (const res of p.apiResources) rows.push({ apiSource: "(apiResources)", resource: res, methods: ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"] });
+
+    for (const cfgRaw of og.operationConfigs) {
+      if (!cfgRaw) continue;
+      const apiSource = typeof cfgRaw.apiSource === "string" ? cfgRaw.apiSource : "";
+      if (!apiSource) continue;
+
+      let quota: Quota|undefined;
+      if (cfgRaw.quota && (cfgRaw.quota.limit || cfgRaw.quota.interval || cfgRaw.quota.timeUnit)) {
+        const tu = cfgRaw.quota.timeUnit ? String(cfgRaw.quota.timeUnit).toUpperCase() : undefined;
+        quota = {
+          limit: cfgRaw.quota.limit ? String(cfgRaw.quota.limit) : undefined,
+          interval: cfgRaw.quota.interval ? String(cfgRaw.quota.interval) : undefined,
+          timeUnit: tu
+        };
+      }
+
+      const ops = Array.isArray(cfgRaw.operations) ? cfgRaw.operations : [];
+      for (const op of ops) {
+        const resource = typeof op?.resource === "string" ? op.resource : "";
+        const methodsRaw: any[] = Array.isArray(op?.methods) ? op.methods : [];
+        const methods = methodsRaw
+          .map(m => String(m || "").toUpperCase())
+          .filter(m => ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"].includes(m)) as Method[];
+
+        if (!resource || methods.length === 0) continue;
+
+        rows.push({ apiSource, resource, methods, quota });
+      }
     }
+
     return rows;
   }
 
+  // ---------- Persistência de operations/quota ----------
   async function applyOpGroup(newOg: OperationGroup) {
     if (!org || !selected) return;
     await fetchJson(`/api/products/${encodeURIComponent(selected)}/update?org=${encodeURIComponent(org)}`, {
@@ -376,7 +418,6 @@ export default function ProductsPage() {
       await loadProducts(); // apenas GET para atualizar grid
       alert("API Product criado com sucesso.");
     } catch (err:any) {
-      // já mostramos uma mensagem em postMsg; mantém alerta também
       alert("Erro ao criar product: " + (err?.message || String(err)));
     } finally {
       creatingRef.current = false;
@@ -387,6 +428,7 @@ export default function ProductsPage() {
     if (e.key === "Enter" && !(e.ctrlKey||e.metaKey||e.shiftKey)) { e.preventDefault(); e.stopPropagation(); }
   }
 
+  // ---------- UI ----------
   const rows = detail ? opRowsFromDetail(detail) : [];
 
   return (
@@ -415,7 +457,6 @@ export default function ProductsPage() {
         </label>
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
           <input placeholder="filtrar..." value={q} onChange={e=>setQ(e.target.value)} style={{flex:1}} />
-          {/* REMOVIDO o botão Listar products para não haver confusão */}
         </div>
         {err && <div style={{color:"#ef4444"}}>Erro: {err}</div>}
       </div>
@@ -557,8 +598,99 @@ export default function ProductsPage() {
 
               <div>
                 <h4 style={{margin:'8px 0'}}>Operations</h4>
-                {/* Tabela das operações igual à sua versão anterior */}
-                {/* ... */}
+
+                {/* aviso quando há operationGroup mas nada parseável */}
+                {detail?.operationGroup && rows.length === 0 && (
+                  <div className="card" style={{padding:10, borderLeft:"3px solid #eab308"}}>
+                    <div style={{fontWeight:600}}>Nenhuma operação exibível</div>
+                    <div className="small" style={{opacity:.8}}>
+                      O produto possui <code>operationGroup</code>, mas não foi possível montar linhas válidas
+                      (ex.: métodos vazios, recurso ausente, etc). Os dados crus estão OK no backend — tente
+                      atualizar ou ajustar as operações.
+                    </div>
+                    <div style={{marginTop:8}}>
+                      <button
+                        style={btnNeutral}
+                        onClick={()=> selected && openDetail(selected)}
+                        title="Recarregar detalhes"
+                      >
+                        Recarregar detalhes
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {(!detail || rows.length===0) && !detail?.operationGroup && (
+                  <div className="card" style={{padding:10}}>Nenhum resource / operação associado.</div>
+                )}
+
+                {rows.length>0 && (
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%', borderCollapse:'collapse', minWidth:820}}>
+                      <thead>
+                        <tr>
+                          <th style={{textAlign:'left', padding:'6px'}}>Proxy</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Path</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Methods</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Quota (limit / interval / unit)</th>
+                          <th style={{textAlign:'left', padding:'6px'}}>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, idx)=>(
+                          <tr key={`${r.apiSource}-${r.resource}-${idx}`} style={{borderTop:'1px solid var(--border)'}}>
+                            <td style={{padding:'6px'}}>{r.apiSource}</td>
+                            <td style={{padding:'6px', fontFamily:'monospace'}}>{r.resource}</td>
+                            <td style={{padding:'6px'}}>{r.methods.join(", ")}</td>
+                            <td style={{padding:'6px'}}>
+                              <div style={{display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
+                                <input
+                                  style={{width:84}}
+                                  placeholder="limit"
+                                  value={quotaEdits[r.apiSource]?.limit ?? (detail ? r.quota?.limit || "" : "")}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), limit: e.currentTarget.value }}))}
+                                />
+                                <input
+                                  style={{width:84}}
+                                  placeholder="interval"
+                                  value={quotaEdits[r.apiSource]?.interval ?? (detail ? r.quota?.interval || "" : "")}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), interval: e.currentTarget.value }}))}
+                                />
+                                <select
+                                  value={quotaEdits[r.apiSource]?.timeUnit ?? (detail ? (r.quota?.timeUnit || "MINUTE") : "MINUTE")}
+                                  onChange={(e)=> setQuotaEdits(prev => ({...prev, [r.apiSource]: { ...(prev[r.apiSource]||{}), timeUnit: e.target.value as Quota["timeUnit"] }}))}
+                                >
+                                  <option value="SECOND">SECOND</option>
+                                  <option value="MINUTE">MINUTE</option>
+                                  <option value="HOUR">HOUR</option>
+                                  <option value="DAY">DAY</option>
+                                  <option value="MONTH">MONTH</option>
+                                  <option value="YEAR">YEAR</option>
+                                </select>
+                                <button
+                                  style={{...btnPrimary, padding:"6px 10px"}}
+                                  onClick={()=> saveQuotaForApiSource(r.apiSource)}
+                                  title="Salvar quota deste proxy"
+                                >
+                                  Salvar quota
+                                </button>
+                              </div>
+                            </td>
+                            <td style={{padding:'6px'}}>
+                              <button
+                                style={{...btnDanger, padding:"6px 10px"}}
+                                onClick={()=> removeOperation({ apiSource:r.apiSource, resource:r.resource })}
+                                title="Remover operação"
+                              >
+                                Remover
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div className="card" style={{padding:10}}>
