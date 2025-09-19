@@ -1,11 +1,10 @@
 // app/ui/products/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// --- Tipos mínimos para a UI:
+// --- Tipos:
 type Method = "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS";
-// timeUnit: UI usa UPPERCASE; convertemos para lowercase ao enviar
 type Quota = { limit?: string; interval?: string; timeUnit?: string };
 type Operation = { resource: string; methods: Method[] };
 type OperationConfig = { apiSource: string; operations: Operation[]; quota?: Quota };
@@ -21,7 +20,6 @@ type ApiProduct = {
   operationGroup?: OperationGroup;
 };
 
-// Pode ou não ter basePath (fallback via /api/apis não tem)
 type BasepathDTO = { name: string; basePath?: string; revision?: string };
 
 async function fetchJson<T=any>(url: string, init?: RequestInit): Promise<T> {
@@ -32,16 +30,14 @@ async function fetchJson<T=any>(url: string, init?: RequestInit): Promise<T> {
   return j as T;
 }
 
-// --- helpers robustos ----
 function normalizeProductNames(input: any): string[] {
   const out = new Set<string>();
   const push = (v: any) => {
     if (typeof v === "string" && v.trim()) out.add(v);
     else if (v && typeof v.name === "string" && v.name.trim()) out.add(v.name);
   };
-  if (Array.isArray(input)) {
-    for (const it of input) push(it);
-  } else if (input && typeof input === "object") {
+  if (Array.isArray(input)) for (const it of input) push(it);
+  else if (input && typeof input === "object") {
     const keys = ["names", "apiProduct", "apiproducts", "products", "items"];
     for (const k of keys) {
       const arr = (input as any)[k];
@@ -51,7 +47,6 @@ function normalizeProductNames(input: any): string[] {
   return Array.from(out);
 }
 
-// Converte UI -> formato aceito pela Apigee
 function toApiTimeUnit(u?: string): "second"|"minute"|"hour"|"day"|"month"|"year"|undefined {
   if (!u) return undefined;
   const v = String(u).toLowerCase();
@@ -59,7 +54,6 @@ function toApiTimeUnit(u?: string): "second"|"minute"|"hour"|"day"|"month"|"year
   return undefined;
 }
 
-// Sanitiza name para o formato aceito pela Apigee (sem espaços)
 function sanitizeProductName(input: string): string {
   return input
     .trim()
@@ -75,30 +69,11 @@ function mapAccess(v: string): "Public"|"Private" {
 }
 
 const btnBase: React.CSSProperties = {
-  borderRadius: 8,
-  padding: "8px 12px",
-  fontWeight: 600,
-  border: "1px solid var(--border, #333)",
-  cursor: "pointer",
-  lineHeight: 1.1,
+  borderRadius: 8, padding: "8px 12px", fontWeight: 600,
+  border: "1px solid var(--border, #333)", cursor: "pointer", lineHeight: 1.1,
 };
-const btnPrimary: React.CSSProperties = {
-  ...btnBase,
-  background: "#facc15",
-  color: "#111",
-  borderColor: "#eab308",
-};
-const btnDanger: React.CSSProperties = {
-  ...btnBase,
-  background: "#ef4444",
-  color: "#fff",
-  borderColor: "#dc2626",
-};
-const btnNeutral: React.CSSProperties = {
-  ...btnBase,
-  background: "transparent",
-  color: "var(--fg, #eee)",
-};
+const btnPrimary: React.CSSProperties = { ...btnBase, background: "#facc15", color: "#111", borderColor: "#eab308" };
+const btnDanger:  React.CSSProperties = { ...btnBase, background: "#ef4444", color: "#fff", borderColor: "#dc2626" };
 
 export default function ProductsPage() {
   const [orgs, setOrgs] = useState<string[]>([]);
@@ -115,22 +90,19 @@ export default function ProductsPage() {
 
   const [checks, setChecks] = useState<Record<string, boolean>>({});
 
-  // basepaths/proxies para o combo (com fallback)
   const [basepaths, setBasepaths] = useState<BasepathDTO[]>([]);
-  // valor do option codificado "name||basePath"
   const [selectedProxyRef, setSelectedProxyRef] = useState<string>("");
 
-  // add operation form
+  // add operation
   const [addPath, setAddPath] = useState("");
   const [addMethods, setAddMethods] = useState<Method[]>([]);
   const [addLimit, setAddLimit] = useState("");
   const [addInterval, setAddInterval] = useState("");
   const [addTimeUnit, setAddTimeUnit] = useState<string>("MINUTE");
 
-  // quota edição explícita por proxy (apiSource)
   const [quotaEdits, setQuotaEdits] = useState<Record<string, Quota>>({});
 
-  // novo API Product
+  // criar product
   const [newName, setNewName] = useState("");
   const [newDisplay, setNewDisplay] = useState("");
   const [newDescription, setNewDescription] = useState("");
@@ -138,14 +110,20 @@ export default function ProductsPage() {
   const [newAccess, setNewAccess] = useState<"Public"|"Private">("Public");
   const [newScopesText, setNewScopesText] = useState("");
   const [newEnvs, setNewEnvs] = useState<string[]>([]);
-  const creatingRef = useRef(false); // guarda contra double-click
 
+  // UI feedback
+  const [postBusy, setPostBusy] = useState(false);
+  const [postMsg, setPostMsg] = useState<string>("");
+  const creatingRef = useRef(false);
+
+  // ---- boot ----
   useEffect(() => {
     fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
   }, []);
 
+  // carrega envs quando muda org
   useEffect(() => {
-    if (!org) { setEnv(""); setEnvs([]); return; }
+    if (!org) { setEnv(""); setEnvs([]); setList([]); setSelected(""); setDetail(null); return; }
     const ac = new AbortController();
     (async () => {
       try {
@@ -159,26 +137,26 @@ export default function ProductsPage() {
     return () => ac.abort();
   }, [org]);
 
-  // quando mudar env/ envs, por padrão seleciona o env atual para o novo product (se não houver seleção manual)
+  // AUTO-LISTAR products quando org muda (remove o botão "Listar products")
   useEffect(() => {
-    if (env && (newEnvs.length===0 || (newEnvs.length===1 && newEnvs[0]!==env))) {
-      setNewEnvs([env]);
-    }
+    if (!org) return;
+    (async () => { await loadProducts(); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env, envs.length]);
+  }, [org]);
 
   async function loadProducts() {
     if (!org) return;
     setLoading(true);
     setErr("");
     try {
-      const qs = `?org=${encodeURIComponent(org)}`;
-      const j = await fetchJson<any>(`/api/products${qs}`);
+      const j = await fetchJson<any>(`/api/products?org=${encodeURIComponent(org)}`);
       const names = normalizeProductNames(j);
       setList(names);
       setChecks({});
-      setSelected("");
-      setDetail(null);
+      // mantém detail selecionado se ainda existir
+      if (selected && !names.includes(selected)) {
+        setSelected(""); setDetail(null);
+      }
     } catch (e:any) {
       setErr(e.message || String(e));
     } finally {
@@ -186,91 +164,54 @@ export default function ProductsPage() {
     }
   }
 
-  // Fallback robusto: tenta /api/basepaths; se vier vazio, usa /api/apis para listar nomes
   async function loadBasepaths() {
-    setBasepaths([]);
-    setSelectedProxyRef("");
+    setBasepaths([]); setSelectedProxyRef("");
     if (!org || !env) return;
-
     try {
-      const qs = `?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`;
-      const list = await fetchJson<any[]>(`/api/basepaths${qs}`);
+      const list = await fetchJson<any[]>(`/api/basepaths?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`);
       const arr = Array.isArray(list) ? list : [];
-      const withBP: BasepathDTO[] = arr
-        .map((x: any) => ({
-          name: String(x?.name ?? ""),
-          basePath: x?.basePath ? String(x.basePath) : undefined,
-          revision: x?.revision ? String(x.revision) : undefined,
-        }))
-        .filter((x) => x.name);
-      if (withBP.length > 0) {
+      const withBP: BasepathDTO[] = arr.map((x:any)=>({
+        name: String(x?.name ?? ""), basePath: x?.basePath ? String(x.basePath) : undefined,
+        revision: x?.revision ? String(x.revision) : undefined,
+      })).filter(x=>x.name);
+      if (withBP.length) {
         setBasepaths(withBP);
-        const first = withBP[0];
-        setSelectedProxyRef(`${first.name}||${first.basePath ?? ""}`);
+        const f = withBP[0]; setSelectedProxyRef(`${f.name}||${f.basePath ?? ""}`);
         return;
       }
-    } catch {
-      // ignore; cai pro fallback
-    }
-
-    // Fallback: usa /api/apis (lista de proxies por nome)
+    } catch {}
+    // fallback /api/apis
     try {
-      const qs = `?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`;
-      const apis = await fetchJson<any>(`/api/apis${qs}`);
+      const apis = await fetchJson<any>(`/api/apis?org=${encodeURIComponent(org)}&env=${encodeURIComponent(env)}`);
       let names: string[] = [];
-
-      if (Array.isArray(apis?.proxies)) {
-        names = apis.proxies
-          .map((p: any) => (typeof p === "string" ? p : String(p?.name || "")))
-          .filter(Boolean);
-      } else if (Array.isArray(apis)) {
-        names = apis
-          .map((p: any) => (typeof p === "string" ? p : String(p?.name || "")))
-          .filter(Boolean);
-      }
-
-      const uniq = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
-      const dto = uniq.map((name) => ({ name } as BasepathDTO));
+      if (Array.isArray(apis?.proxies)) names = apis.proxies.map((p:any)=> typeof p==="string"? p : String(p?.name||"")).filter(Boolean);
+      else if (Array.isArray(apis)) names = apis.map((p:any)=> typeof p==="string"? p : String(p?.name||"")).filter(Boolean);
+      const uniq = Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
+      const dto = uniq.map(name=>({ name } as BasepathDTO));
       setBasepaths(dto);
       if (dto.length) setSelectedProxyRef(`${dto[0].name}||`);
-    } catch {
-      setBasepaths([]);
-      setSelectedProxyRef("");
-    }
+    } catch { setBasepaths([]); setSelectedProxyRef(""); }
   }
 
   async function openDetail(name: string) {
     if (!org || !name) return;
-    setSelected(name);
-    setDetail(null);
+    setSelected(name); setDetail(null);
     try {
-      const qs = `?org=${encodeURIComponent(org)}`;
-      const j = await fetchJson<ApiProduct>(`/api/products/${encodeURIComponent(name)}${qs}`);
+      const j = await fetchJson<ApiProduct>(`/api/products/${encodeURIComponent(name)}?org=${encodeURIComponent(org)}`);
       setDetail(j);
-
-      // quotaEdits inicial por apiSource
       const rows = opRowsFromDetail(j);
       const seed: Record<string, Quota> = {};
-      for (const r of rows) {
-        const prev = seed[r.apiSource];
-        seed[r.apiSource] = prev || { ...r.quota };
-      }
+      for (const r of rows) seed[r.apiSource] = seed[r.apiSource] || { ...r.quota };
       setQuotaEdits(seed);
-
       await loadBasepaths();
     } catch (e:any) {
       setErr(e.message || String(e));
     }
   }
 
-  // Recarrega basepaths quando o env muda (se já há product selecionado)
   useEffect(() => {
-    if (selected) {
-      loadBasepaths();
-    } else {
-      setBasepaths([]);
-      setSelectedProxyRef("");
-    }
+    if (selected) loadBasepaths();
+    else { setBasepaths([]); setSelectedProxyRef(""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env]);
 
@@ -282,36 +223,25 @@ export default function ProductsPage() {
       .filter(n => n.toLowerCase().includes(t));
   }, [list, q]);
 
-  function opRowsFromDetail(p: ApiProduct): Array<{
-    apiSource: string;
-    resource: string;
-    methods: Method[];
-    quota?: Quota;
-  }> {
+  function opRowsFromDetail(p: ApiProduct): Array<{ apiSource: string; resource: string; methods: Method[]; quota?: Quota; }> {
     const rows: Array<{apiSource:string;resource:string;methods:Method[];quota?:Quota}> = [];
     const og = p.operationGroup;
     if (og && Array.isArray(og.operationConfigs)) {
       for (const cfg of og.operationConfigs) {
-        const api = cfg.apiSource;
-        const quota = cfg.quota;
-        for (const op of (cfg.operations||[])) {
-          rows.push({ apiSource: api, resource: op.resource, methods: (op.methods||[]) as Method[], quota });
-        }
+        const api = cfg.apiSource; const quota = cfg.quota;
+        for (const op of (cfg.operations||[])) rows.push({ apiSource: api, resource: op.resource, methods: (op.methods||[]) as Method[], quota });
       }
       return rows;
     }
     if (Array.isArray(p.apiResources) && p.apiResources.length>0) {
-      for (const res of p.apiResources) {
-        rows.push({ apiSource: "(apiResources)", resource: res, methods: ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"] });
-      }
+      for (const res of p.apiResources) rows.push({ apiSource: "(apiResources)", resource: res, methods: ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"] });
     }
     return rows;
   }
 
   async function applyOpGroup(newOg: OperationGroup) {
     if (!org || !selected) return;
-    const qs = `?org=${encodeURIComponent(org)}`;
-    await fetchJson(`/api/products/${encodeURIComponent(selected)}/update${qs}`, {
+    await fetchJson(`/api/products/${encodeURIComponent(selected)}/update?org=${encodeURIComponent(org)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ operationGroup: newOg }),
@@ -331,11 +261,7 @@ export default function ProductsPage() {
       apiSource,
       operations: v.ops,
       quota: (v.quota && (v.quota.limit || v.quota.interval || v.quota.timeUnit))
-        ? {
-            limit: v.quota.limit,
-            interval: v.quota.interval,
-            timeUnit: toApiTimeUnit(v.quota.timeUnit) // lowercase para Apigee
-          }
+        ? { limit: v.quota.limit, interval: v.quota.interval, timeUnit: toApiTimeUnit(v.quota.timeUnit) }
         : undefined,
     }));
     return { operationConfigs, operationConfigType: "proxy" };
@@ -351,11 +277,7 @@ export default function ProductsPage() {
   async function saveQuotaForApiSource(apiSource: string) {
     if (!detail) return;
     const qRaw = quotaEdits[apiSource] || {};
-    const qNorm: Quota = {
-      limit: qRaw.limit,
-      interval: qRaw.interval,
-      timeUnit: toApiTimeUnit(qRaw.timeUnit) // lowercase
-    };
+    const qNorm: Quota = { limit: qRaw.limit, interval: qRaw.interval, timeUnit: toApiTimeUnit(qRaw.timeUnit) };
     const rows = opRowsFromDetail(detail).map(r => (r.apiSource===apiSource ? { ...r, quota: qNorm } : r));
     const newOg = toOperationGroup(rows);
     await applyOpGroup(newOg);
@@ -364,30 +286,17 @@ export default function ProductsPage() {
   async function addOperation() {
     if (!detail || !selected) return;
     if (!selectedProxyRef || !addPath.trim() || addMethods.length===0) {
-      alert("Selecione a API proxy, informe o path e pelo menos um método.");
-      return;
+      alert("Selecione a API proxy, informe o path e pelo menos um método."); return;
     }
-
-    // selectedProxyRef tem o formato "name||basePath"
     const [proxyName] = selectedProxyRef.split("||");
     const apiSource = (proxyName || "").trim();
-    if (!apiSource) {
-      alert("Não foi possível resolver o nome do proxy selecionado.");
-      return;
-    }
-
+    if (!apiSource) { alert("Não foi possível resolver o nome do proxy selecionado."); return; }
     const rows = opRowsFromDetail(detail);
-    rows.push({
-      apiSource,
-      resource: addPath.trim(),
-      methods: addMethods,
-      quota: (addLimit || addInterval || addTimeUnit)
-        ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit: toApiTimeUnit(addTimeUnit) }
-        : undefined,
+    rows.push({ apiSource, resource: addPath.trim(), methods: addMethods,
+      quota: (addLimit || addInterval || addTimeUnit) ? { limit:addLimit||undefined, interval:addInterval||undefined, timeUnit: toApiTimeUnit(addTimeUnit) } : undefined,
     });
     const newOg = toOperationGroup(rows);
     await applyOpGroup(newOg);
-
     setAddPath(""); setAddMethods([]);
   }
 
@@ -397,12 +306,8 @@ export default function ProductsPage() {
     if (names.length===0) { alert("Selecione ao menos um product."); return; }
     if (!confirm(`Excluir ${names.length} product(s)? Esta ação é irreversível.`)) return;
     for (const n of names) {
-      try {
-        const qs = `?org=${encodeURIComponent(org)}`;
-        await fetchJson(`/api/products/${encodeURIComponent(n)}${qs}`, { method: "DELETE" });
-      } catch (e:any) {
-        console.error("Falha ao excluir", n, e?.message || String(e));
-      }
+      try { await fetchJson(`/api/products/${encodeURIComponent(n)}?org=${encodeURIComponent(org)}`, { method: "DELETE" }); }
+      catch (e:any) { console.error("Falha ao excluir", n, e?.message || String(e)); }
     }
     await loadProducts();
     alert("Concluído (verifique a lista).");
@@ -413,20 +318,14 @@ export default function ProductsPage() {
     return arr.length ? arr : undefined;
   }
 
+  // ---------- CRIAR PRODUCT ----------
   async function createProductRequest() {
-    if (!org) {
-      alert("Selecione uma org.");
-      return;
-    }
+    if (!org) { alert("Selecione uma org."); throw new Error("org ausente"); }
     if (!newName.trim() || !newDisplay.trim() || !newDescription.trim()) {
-      alert("Preencha name, displayName e description.");
-      return;
+      alert("Preencha name, displayName e description."); throw new Error("campos obrigatórios ausentes");
     }
     const id = sanitizeProductName(newName);
-    if (!id) {
-      alert("Nome inválido após sanitização. Use letras, números, hífen ou underscore.");
-      return;
-    }
+    if (!id) { alert("Nome inválido após sanitização. Use letras, números, hífen ou underscore."); throw new Error("name inválido"); }
 
     const body: any = {
       org,
@@ -443,44 +342,49 @@ export default function ProductsPage() {
     const scopes = parseScopes(newScopesText);
     if (scopes) body.scopes = scopes;
 
-    await fetchJson(`/api/products?org=${encodeURIComponent(org)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  }
-
-  // Bloqueia Enter nos inputs de criação (evita submit implícito)
-  function preventEnter(e: React.KeyboardEvent<HTMLInputElement|HTMLTextAreaElement>) {
-    if (e.key === "Enter") {
-      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) {
-        e.preventDefault();
-        e.stopPropagation();
+    setPostBusy(true);
+    setPostMsg("Enviando POST /api/products …");
+    try {
+      const res = await fetch(`/api/products?org=${encodeURIComponent(org)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const txt = await res.text();
+      let j: any = undefined;
+      try { j = txt ? JSON.parse(txt) : undefined; } catch {}
+      if (!res.ok) {
+        setPostMsg(`Erro ${res.status}: ${j?.error || res.statusText}`);
+        throw new Error(j?.error || res.statusText);
       }
+      setPostMsg("Criado com sucesso.");
+      return j;
+    } finally {
+      setTimeout(()=>setPostBusy(false), 800);
     }
   }
 
   async function handleCreateClick(e: React.MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (creatingRef.current) return;
     creatingRef.current = true;
     try {
       await createProductRequest();
-      setNewName("");
-      setNewDisplay("");
-      setNewDescription("");
-      setNewApproval("auto");
-      setNewAccess("Public");
-      setNewScopesText("");
+      setNewName(""); setNewDisplay(""); setNewDescription("");
+      setNewApproval("auto"); setNewAccess("Public"); setNewScopesText("");
       setNewEnvs(env ? [env] : []);
-      await loadProducts(); // atualiza grid
+      await loadProducts(); // apenas GET para atualizar grid
       alert("API Product criado com sucesso.");
-    } catch (err: any) {
+    } catch (err:any) {
+      // já mostramos uma mensagem em postMsg; mantém alerta também
       alert("Erro ao criar product: " + (err?.message || String(err)));
     } finally {
       creatingRef.current = false;
     }
+  }
+
+  function preventEnter(e: React.KeyboardEvent<HTMLInputElement|HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !(e.ctrlKey||e.metaKey||e.shiftKey)) { e.preventDefault(); e.stopPropagation(); }
   }
 
   const rows = detail ? opRowsFromDetail(detail) : [];
@@ -488,6 +392,13 @@ export default function ProductsPage() {
   return (
     <main>
       <h2>API Products</h2>
+
+      {/* Banner de POST/debug */}
+      {postBusy && (
+        <div style={{background:"#111", color:"#eee", padding:"6px 10px", borderRadius:8, marginBottom:8, border:"1px solid #333"}}>
+          {postMsg || "Processando…"}
+        </div>
+      )}
 
       <div className="card" style={{display:'grid', gap:8, maxWidth:980, marginBottom:12}}>
         <label>Org
@@ -503,8 +414,8 @@ export default function ProductsPage() {
           </select>
         </label>
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
-          <button type="button" onClick={loadProducts} disabled={!org}>Listar products</button>
           <input placeholder="filtrar..." value={q} onChange={e=>setQ(e.target.value)} style={{flex:1}} />
+          {/* REMOVIDO o botão Listar products para não haver confusão */}
         </div>
         {err && <div style={{color:"#ef4444"}}>Erro: {err}</div>}
       </div>
@@ -559,32 +470,15 @@ export default function ProductsPage() {
             <div style={{display:"grid", gap:8, gridTemplateColumns:"1fr 1fr"}}>
               <label>
                 <div className="small" style={{opacity:.8}}>name *</div>
-                <input
-                  placeholder="ex.: scope-teste"
-                  value={newName}
-                  onChange={e=>setNewName(e.target.value)}
-                  onKeyDown={preventEnter}
-                />
+                <input placeholder="ex.: scope-teste" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={preventEnter} />
               </label>
               <label>
                 <div className="small" style={{opacity:.8}}>displayName *</div>
-                <input
-                  placeholder="ex.: scope teste"
-                  value={newDisplay}
-                  onChange={e=>setNewDisplay(e.target.value)}
-                  onKeyDown={preventEnter}
-                />
+                <input placeholder="ex.: scope teste" value={newDisplay} onChange={e=>setNewDisplay(e.target.value)} onKeyDown={preventEnter} />
               </label>
               <label style={{gridColumn:'1 / -1'}}>
                 <div className="small" style={{opacity:.8}}>description *</div>
-                <textarea
-                  placeholder="Descrição do produto…"
-                  value={newDescription}
-                  onChange={e=>setNewDescription(e.target.value)}
-                  onKeyDown={preventEnter}
-                  rows={3}
-                  style={{width:"100%"}}
-                />
+                <textarea placeholder="Descrição do produto…" value={newDescription} onChange={e=>setNewDescription(e.target.value)} onKeyDown={preventEnter} rows={3} style={{width:"100%"}} />
               </label>
 
               <label>
@@ -604,12 +498,7 @@ export default function ProductsPage() {
 
               <label>
                 <div className="small" style={{opacity:.8}}>scopes (opcional)</div>
-                <input
-                  placeholder="escopo1, escopo2"
-                  value={newScopesText}
-                  onChange={e=>setNewScopesText(e.target.value)}
-                  onKeyDown={preventEnter}
-                />
+                <input placeholder="escopo1, escopo2" value={newScopesText} onChange={e=>setNewScopesText(e.target.value)} onKeyDown={preventEnter} />
               </label>
               <label>
                 <div className="small" style={{opacity:.8}}>environments (opcional)</div>
@@ -622,9 +511,7 @@ export default function ProductsPage() {
                     setNewEnvs(vals);
                   }}
                 >
-                  {envs.map(x=>(
-                    <option key={x} value={x}>{x}</option>
-                  ))}
+                  {envs.map(x=>(<option key={x} value={x}>{x}</option>))}
                 </select>
               </label>
 
@@ -670,7 +557,8 @@ export default function ProductsPage() {
 
               <div>
                 <h4 style={{margin:'8px 0'}}>Operations</h4>
-                {/* ... tabela de operações existente ... */}
+                {/* Tabela das operações igual à sua versão anterior */}
+                {/* ... */}
               </div>
 
               <div className="card" style={{padding:10}}>
@@ -678,17 +566,10 @@ export default function ProductsPage() {
 
                 <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
                   <label>API Proxy
-                    <select
-                      value={selectedProxyRef}
-                      onChange={e=>setSelectedProxyRef(e.target.value)}
-                      disabled={!env}
-                    >
+                    <select value={selectedProxyRef} onChange={e=>setSelectedProxyRef(e.target.value)} disabled={!env}>
                       <option value="">{env ? "Selecione…" : "Selecione um env"}</option>
                       {basepaths.map(p=>(
-                        <option
-                          key={`${p.name}:${p.basePath || ""}`}
-                          value={`${p.name}||${p.basePath || ""}`}
-                        >
+                        <option key={`${p.name}:${p.basePath || ""}`} value={`${p.name}||${p.basePath || ""}`}>
                           {p.basePath ? `${p.name} — ${p.basePath}${p.revision ? ` (rev ${p.revision})` : ""}` : p.name}
                         </option>
                       ))}
