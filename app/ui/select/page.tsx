@@ -5,6 +5,7 @@ type KvmEntry = { name: string; value: any };
 type ExportResp = { keyValueEntries: KvmEntry[]; nextPageToken: string };
 type DiffResp = { add: string[]; del: string[]; chg: {name:string; from:any; to:any}[]; counts?: {add:number; del:number; chg:number} };
 
+// --- helpers ---
 function validateKvmSchema(data: any): { ok: boolean; message?: string } {
   if (!data || typeof data !== 'object') return { ok: false, message: 'JSON raiz deve ser um objeto' };
   if (!Array.isArray(data.keyValueEntries)) return { ok: false, message: 'keyValueEntries deve ser um array' };
@@ -18,11 +19,9 @@ function validateKvmSchema(data: any): { ok: boolean; message?: string } {
       return { ok: false, message: `item #${i} (${it.name}) valor deve ser string/number/boolean` };
     }
   }
-  // opcional nextPageToken string
   if (typeof data.nextPageToken !== 'undefined' && typeof data.nextPageToken !== 'string') {
     return { ok: false, message: 'nextPageToken (quando presente) deve ser string' };
   }
-  // duplicados?
   const names = new Set<string>();
   for (const it of data.keyValueEntries) {
     if (names.has(it.name)) return { ok: false, message: `chave duplicada: ${it.name}` };
@@ -31,6 +30,23 @@ function validateKvmSchema(data: any): { ok: boolean; message?: string } {
   return { ok: true };
 }
 
+function normalizeKvmNames(payload: any): string[] {
+  let arr: string[] = [];
+  if (payload && Array.isArray(payload.names)) {
+    arr = payload.names.map((x: any) => String(x ?? ''));
+  } else if (Array.isArray(payload)) {
+    arr = payload.map((x: any) => String(x ?? ''));
+  }
+  const cleaned = arr
+    .map(n => n.trim())
+    .filter(Boolean)
+    .filter(n => !n.includes('/'))               // remove itens com caminho
+    .filter(n => !n.toLowerCase().endsWith('.json')); // remove dumps .json
+
+  return Array.from(new Set(cleaned)).sort((a, b) => a.localeCompare(b));
+}
+
+// --- UI ---
 export default function SelectUI() {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState<string>('');
@@ -53,35 +69,62 @@ export default function SelectUI() {
   const fileRef = useRef<HTMLInputElement|null>(null);
   const [createMsg, setCreateMsg] = useState<string>('');
 
-  // ⬇️ loading para exclusão de KVM
   const [deleting, setDeleting] = useState<boolean>(false);
 
-  useEffect(() => { fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
+  useEffect(() => {
+    fetch('/api/orgs').then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([]));
+  }, []);
+
   useEffect(() => {
     if (!org) return;
     setEnv(''); setEnvs([]); setKvms([]); setKvm('');
-    fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
+    fetch(`/api/envs?org=${encodeURIComponent(org)}`)
+      .then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
   }, [org]);
 
   async function saveToken() {
     setTokenSaved(false); setTokenMsg('');
-    const res = await fetch('/api/auth/token', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token: tokenInput.trim() }) });
+    const res = await fetch('/api/auth/token', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token: tokenInput.trim() })
+    });
     const j = await res.json().catch(()=>({}));
-    if (res.ok) { setTokenSaved(true); setTokenMsg('Token salvo (expira ~1h).'); } else { setTokenMsg('Falha ao salvar: ' + (j.error || res.statusText)); }
+    if (res.ok) { setTokenSaved(true); setTokenMsg('Token salvo (expira ~1h).'); }
+    else { setTokenMsg('Falha ao salvar: ' + (j.error || res.statusText)); }
   }
-  async function clearToken() { await fetch('/api/auth/token', { method: 'DELETE' }); setTokenSaved(false); setTokenMsg('Token limpo.'); }
+  async function clearToken() {
+    await fetch('/api/auth/token', { method: 'DELETE' });
+    setTokenSaved(false); setTokenMsg('Token limpo.');
+  }
 
   async function loadKvms() {
     if (!org || !env) return;
-    const res = await fetch('/api/kvms', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({org, env})});
-    const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Erro inesperado'); return; }
-    setKvms(Array.isArray(data)? data : []);
+    try {
+      const res = await fetch('/api/kvms', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({org, env})
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Erro inesperado'); return; }
+      const names = normalizeKvmNames(data);
+      setKvms(names);
+      // ativa o combo automaticamente se estiver vazio
+      if (names.length && !kvm) setKvm(names[0]);
+    } catch (e:any) {
+      alert('Falha ao listar KVMs: ' + (e.message || String(e)));
+      setKvms([]);
+    }
   }
 
   async function exportKvm() {
     if (!org || !env || !kvm) return;
-    const res = await fetch('/api/kvm/export', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({org, env, kvm})});
+    const res = await fetch('/api/kvm/export', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({org, env, kvm})
+    });
     const data: ExportResp = await res.json();
     if (!res.ok) { alert((data as any).error || 'Erro inesperado'); return; }
     const pretty = JSON.stringify(data, null, 2);
@@ -96,7 +139,12 @@ export default function SelectUI() {
     const blob = new Blob([text], { type: 'application/json' });
     const a = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    a.href = URL.createObjectURL(blob); a.download = `${org||'org'}_${env||'env'}_${kvm||'kvm'}_${stamp}.json`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
+    a.href = URL.createObjectURL(blob);
+    a.download = `${org||'org'}_${env||'env'}_${kvm||'kvm'}_${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    a.remove();
   }
 
   async function showDiff() {
@@ -106,7 +154,11 @@ export default function SelectUI() {
       const check = validateKvmSchema(parsed);
       if (!check.ok) { setEditorStatus('Schema inválido: ' + check.message); return; }
       setEditorStatus('Calculando diff...');
-      const res = await fetch('/api/kvm/dry-run', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ org, env, kvm, data: parsed }) });
+      const res = await fetch('/api/kvm/dry-run', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ org, env, kvm, data: parsed })
+      });
       const j: DiffResp | any = await res.json();
       if (!res.ok) { setEditorStatus('Falha: ' + (j.error || res.statusText)); return; }
       setDiffPreview(j as DiffResp);
@@ -121,7 +173,11 @@ export default function SelectUI() {
       const check = validateKvmSchema(parsed);
       if (!check.ok) { setEditorStatus('Schema inválido: ' + check.message); return; }
       setEditorStatus('Aplicando diffs...');
-      const res = await fetch('/api/kvm/update', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ org, env, kvm, data: parsed }) });
+      const res = await fetch('/api/kvm/update', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ org, env, kvm, data: parsed })
+      });
       const j = await res.json();
       if (!res.ok) { setEditorStatus('Falha: ' + (j.error || res.statusText)); return; }
       setEditorStatus(`Sucesso! created=${j.created} updated=${j.updated} deleted=${j.deleted}`);
@@ -145,7 +201,7 @@ export default function SelectUI() {
       fd.set('env', env);
       fd.set('kvm', newKvmName.trim());
       fd.set('encrypted', String(newKvmEncrypted));
-      fd.set('json', JSON.stringify(json)); // backend espera string json
+      fd.set('json', JSON.stringify(json));
 
       setCreateMsg('Criando KVM...');
       const res = await fetch('/api/kvm/create', { method: 'POST', body: fd });
@@ -157,15 +213,9 @@ export default function SelectUI() {
     } catch (e:any) { setCreateMsg('Erro: ' + (e.message || String(e))); }
   }
 
-  // ⬇️ Excluir KVM por completo
   async function deleteKvm() {
-    if (!org || !env || !kvm) {
-      alert('Selecione Org, Env e um KVM para excluir.');
-      return;
-    }
-    if (!confirm(`Excluir o KVM "${kvm}" por completo? Esta ação é irreversível.`)) {
-      return;
-    }
+    if (!org || !env || !kvm) { alert('Selecione Org, Env e um KVM para excluir.'); return; }
+    if (!confirm(`Excluir o KVM "${kvm}" por completo? Esta ação é irreversível.`)) return;
 
     setDeleting(true);
     try {
@@ -174,13 +224,8 @@ export default function SelectUI() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || res.statusText);
 
-      // limpa editor e recarrega lista
-      setEditorJson('');
-      setResult('');
-      setDiffPreview(null);
-      setKvm('');
+      setEditorJson(''); setResult(''); setDiffPreview(null); setKvm('');
       await loadKvms();
-
       alert('KVM excluído com sucesso!');
     } catch (e:any) {
       alert('Falha ao excluir KVM: ' + (e.message || String(e)));
@@ -192,9 +237,15 @@ export default function SelectUI() {
   return (
     <main>
       <h2>Gerenciar KVMs</h2>
+
       <div className='card' style={{display:'grid', gap:8, marginBottom:16, maxWidth:760}}>
         <strong>Token Google (OAuth) – cole aqui</strong>
-        <input type="password" value={tokenInput} onChange={e=>setTokenInput(e.target.value)} placeholder="ya29...." />
+        <input
+          type="password"
+          value={tokenInput}
+          onChange={e=>setTokenInput(e.currentTarget.value)}
+          placeholder="ya29...."
+        />
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
           <button onClick={saveToken} disabled={!tokenInput.trim()}>Salvar token</button>
           <button onClick={clearToken}>Limpar token</button>
@@ -206,31 +257,38 @@ export default function SelectUI() {
 
       <section className='card' style={{display:'grid', gap:12, maxWidth: 760}}>
         <label>Org
-          <select value={org} onChange={e=>setOrg(e.target.value)}>
+          <select value={org} onChange={e=>setOrg(e.currentTarget.value)}>
             <option value="">Selecione...</option>
             {orgs.map(o=>(<option key={o} value={o}>{o}</option>))}
           </select>
         </label>
+
         <label>Env
-          <select value={env} onChange={e=>setEnv(e.target.value)}>
+          <select value={env} onChange={e=>setEnv(e.currentTarget.value)}>
             <option value="">Selecione...</option>
             {envs.map(x=>(<option key={x} value={x}>{x}</option>))}
           </select>
         </label>
+
         <div style={{display:'flex', gap:8, alignItems:'center'}}>
-          <button onClick={loadKvms}>Listar KVMs</button>
+          <button onClick={loadKvms} disabled={!org || !env}>Listar KVMs</button>
           <span style={{opacity:.7}}>(carregue a lista de KVMs do ambiente)</span>
         </div>
+
         <label>KVM
-          <select value={kvm} onChange={e=>setKvm(e.target.value)}>
-            <option value="">Selecione...</option>
+          <select
+            value={kvm}
+            onChange={e=>setKvm(e.currentTarget.value)}
+            disabled={!kvms.length}
+          >
+            <option value="">{kvms.length ? 'Selecione...' : 'Lista vazia'}</option>
             {kvms.map(m=>(<option key={m} value={m}>{m}</option>))}
           </select>
         </label>
+
         <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
           <button onClick={exportKvm} disabled={!kvm}>Exportar (carregar no editor)</button>
           <button onClick={downloadJson} disabled={!(editorJson || result)}>Baixar JSON</button>
-          {/* Excluir KVM */}
           <button
             onClick={deleteKvm}
             disabled={!kvm || deleting}
@@ -244,12 +302,18 @@ export default function SelectUI() {
 
       <section style={{marginTop:24}}>
         <h3>Editor JSON (para o KVM selecionado)</h3>
-        <textarea value={editorJson} onChange={e=>setEditorJson(e.target.value)} placeholder='{"keyValueEntries":[{"name":"foo","value":"bar"}]}' style={{width:'100%', height:260, fontFamily:'monospace'}}/>
+        <textarea
+          value={editorJson}
+          onChange={e=>setEditorJson(e.currentTarget.value)}
+          placeholder='{"keyValueEntries":[{"name":"foo","value":"bar"}]}'
+          style={{width:'100%', height:260, fontFamily:'monospace'}}
+        />
         <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
           <button onClick={showDiff} disabled={!org || !env || !kvm || !editorJson.trim()}>Pré-visualizar diff</button>
           <button onClick={saveEdit} disabled={!org || !env || !kvm || !editorJson.trim()}>Salvar</button>
           {editorStatus && <small>{editorStatus}</small>}
         </div>
+
         {diffPreview && (
           <div className='card' style={{marginTop:12}}>
             <strong>Diff</strong>
@@ -269,17 +333,22 @@ export default function SelectUI() {
         <h3>Criar novo KVM (upload JSON <u>obrigatório</u>)</h3>
         <div className='card' style={{display:'grid', gap:8, maxWidth:760}}>
           <label>Nome do novo KVM
-            <input value={newKvmName} onChange={e=>setNewKvmName(e.target.value)} placeholder="nome-do-kvm" />
+            <input value={newKvmName} onChange={e=>setNewKvmName(e.currentTarget.value)} placeholder="nome-do-kvm" />
           </label>
           <label style={{display:'flex', gap:8, alignItems:'center'}}>
-            <input type="checkbox" checked={newKvmEncrypted} onChange={e=>setNewKvmEncrypted(e.target.checked)} />
+            <input type="checkbox" checked={newKvmEncrypted} onChange={e=>setNewKvmEncrypted(e.currentTarget.checked)} />
             Criar como <b>encrypted</b>
           </label>
           <label>Arquivo JSON (obrigatório)
             <input type="file" accept="application/json" ref={fileRef} />
           </label>
           <div style={{display:'flex', gap:8, alignItems:'center'}}>
-            <button onClick={createNewKvm} disabled={!org || !env || !newKvmName.trim() || !(fileRef.current && fileRef.current.files && fileRef.current.files.length > 0)}>Criar KVM</button>
+            <button
+              onClick={createNewKvm}
+              disabled={!org || !env || !newKvmName.trim() || !(fileRef.current && fileRef.current.files && fileRef.current.files.length > 0)}
+            >
+              Criar KVM
+            </button>
             {createMsg && <small>{createMsg}</small>}
           </div>
         </div>
