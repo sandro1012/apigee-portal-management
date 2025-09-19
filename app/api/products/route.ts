@@ -1,79 +1,140 @@
-import { cookies } from "next/headers";
-import { requireSession } from "../../../lib/auth";
+// app/api/products/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
-async function getBearer(): Promise<string> {
-  const c = cookies().get("gcp_token")?.value;
-  if (c) return c;
-  if (process.env.GCP_USER_TOKEN) return process.env.GCP_USER_TOKEN as string;
-  throw new Error("Token Google não encontrado (salve via /ui/token ou configure GCP_USER_TOKEN).");
+const APIGEE_BASE = process.env.APIGEE_BASE || "https://apigee.googleapis.com";
+
+// Util: lê token do cookie gcp_token
+function getToken(req: NextRequest): string | undefined {
+  const c = req.cookies.get("gcp_token");
+  return c?.value;
 }
 
-// GET usado pela UI
-export async function GET(req: Request) {
+// Util: resposta JSON com no-store
+function json(data: any, init?: number | ResponseInit) {
+  const res = NextResponse.json(data, init as any);
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return res;
+}
+
+// ---- GET /api/products?org=ORG
+export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const org = searchParams.get("org");
-    if (!org) return new Response(JSON.stringify({ error: "org obrigatório" }), { status: 400 });
+    const org = searchParams.get("org") || "";
+    if (!org) return json({ error: "org obrigatório" }, { status: 400 });
 
-    const token = await getBearer();
+    const token = getToken(req);
+    if (!token) return json({ error: "token ausente (faça /api/auth/token antes)" }, { status: 401 });
 
-    let startKey: string | undefined = undefined;
-    const items: any[] = [];
+    const url = `${APIGEE_BASE}/v1/organizations/${encodeURIComponent(org)}/apiproducts`;
+    const r = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/json",
+      },
+      cache: "no-store",
+      next: { revalidate: 0 },
+    });
 
-    for (let i = 0; i < 20; i++) {
-      const url = new URL(`https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts`);
-      url.searchParams.set("expand", "true");
-      url.searchParams.set("count", "1000");
-      if (startKey) url.searchParams.set("startKey", startKey);
+    const text = await r.text();
+    const body = text ? JSON.parse(text) : null;
 
-      const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-      const j = await r.json();
-      if (!r.ok) {
-        return new Response(JSON.stringify({ error: j.error?.message || r.statusText }), { status: r.status });
-      }
-
-      const list = (j as any).apiProduct || (j as any).apiProducts || j;
-      items.push(...(Array.isArray(list) ? list : []));
-      startKey = (j as any).nextPageToken || (j as any).next_key || (j as any).startKey || undefined;
-      if (!startKey) break;
+    if (!r.ok) {
+      return json(
+        { error: "Apigee error", status: r.status, details: text },
+        { status: r.status }
+      );
     }
 
-    return Response.json(items);
+    // Apigee pode devolver array simples de nomes OU objetos, então repasso bruto.
+    return json(body ?? []);
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || String(e) }), { status: 500 });
+    return json({ error: e?.message || String(e) }, { status: 500 });
   }
 }
 
-// POST opcional (mantido por compatibilidade)
-export async function POST(req: Request) {
-  try { requireSession(); } catch { return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }); }
+// ---- POST /api/products?org=ORG
+// Body esperado (qualquer campo opcional pode faltar):
+// {
+//   name: string (obrigatório, sem espaços; se vier com espaços a UI deve sanitizar)
+//   displayName: string (obrigatório)
+//   description: string (obrigatório)
+//   approvalType?: "auto" | "manual"
+//   environments?: string[]
+//   scopes?: string[]
+//   attributes?: Array<{ name: string; value: string }>
+// }
+export async function POST(req: NextRequest) {
   try {
-    const { org } = await req.json();
-    if (!org) return new Response(JSON.stringify({ error: "org obrigatório" }), { status: 400 });
+    const { searchParams } = new URL(req.url);
+    const org = searchParams.get("org") || "";
+    if (!org) return json({ error: "org obrigatório" }, { status: 400 });
 
-    const token = await getBearer();
+    const token = getToken(req);
+    if (!token) return json({ error: "token ausente (faça /api/auth/token antes)" }, { status: 401 });
 
-    let startKey: string | undefined = undefined;
-    const items: any[] = [];
-
-    for (let i = 0; i < 20; i++) {
-      const url = new URL(`https://apigee.googleapis.com/v1/organizations/${encodeURIComponent(org)}/apiproducts`);
-      url.searchParams.set("expand", "true");
-      url.searchParams.set("count", "1000");
-      if (startKey) url.searchParams.set("startKey", startKey);
-
-      const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-      const j = await r.json();
-      if (!r.ok) return new Response(JSON.stringify({ error: j.error?.message || r.statusText }), { status: r.status });
-
-      const list = (j as any).apiProduct || (j as any).apiProducts || j;
-      items.push(...(Array.isArray(list) ? list : []));
-      startKey = (j as any).nextPageToken || (j as any).next_key || (j as any).startKey || undefined;
-      if (!startKey) break;
+    let body: any = null;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: "JSON inválido" }, { status: 400 });
     }
 
-    return Response.json(items);
+    const name = String(body?.name || "").trim();
+    const displayName = String(body?.displayName || "").trim();
+    const description = String(body?.description || "").trim();
+
+    if (!name || !displayName || !description) {
+      return json({ error: "name, displayName e description são obrigatórios" }, { status: 400 });
+    }
+
+    // Monta payload exatamente como seu curl
+    const payload: any = {
+      name,
+      displayName,
+      description,
+    };
+
+    if (body?.approvalType) payload.approvalType = String(body.approvalType);
+    if (Array.isArray(body?.environments) && body.environments.length) payload.environments = body.environments;
+    if (Array.isArray(body?.scopes) && body.scopes.length) payload.scopes = body.scopes;
+
+    // attributes: garantir access Public|Private se vier
+    if (Array.isArray(body?.attributes)) {
+      payload.attributes = body.attributes.map((a: any) => ({
+        name: String(a?.name ?? ""),
+        value: String(a?.value ?? ""),
+      })).filter((a: any) => a.name);
+    }
+
+    const url = `${APIGEE_BASE}/v1/organizations/${encodeURIComponent(org)}/apiproducts`;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      next: { revalidate: 0 },
+    });
+
+    const text = await r.text();
+    const resp = text ? JSON.parse(text) : null;
+
+    if (!r.ok) {
+      return json(
+        { error: "Apigee error", status: r.status, details: text },
+        { status: r.status }
+      );
+    }
+
+    // Criado com sucesso — devolve o objeto criado
+    // (front pode em seguida chamar GET para atualizar a lista)
+    return json(resp ?? { ok: true }, { status: 201 });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || String(e) }), { status: 500 });
+    return json({ error: e?.message || String(e) }, { status: 500 });
   }
 }
