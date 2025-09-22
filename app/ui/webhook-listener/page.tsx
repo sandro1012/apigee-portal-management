@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 // ====== Modelos ======
 type AuthType = "None" | "Basic" | "Api Key" | "Token" | "TokenAPI" | "TokenPassword" | "TokenFormUrlencoded";
@@ -10,7 +10,7 @@ type ListenerApi = {
   label: string;
 };
 
-// Lista base de APIs listener (adicione/remova aqui conforme necessário)
+// Lista base de APIs listener (v2 com hífen)
 const LISTENER_APIS: ListenerApi[] = [
   { key: "cancelProductOrderCreateEvent", label: "cancelProductOrderCreateEvent" },
   { key: "cancelTroubleTicketCreateEvent", label: "cancelTroubleTicketCreateEvent" },
@@ -22,7 +22,7 @@ const LISTENER_APIS: ListenerApi[] = [
   { key: "productOrderStateChangeEvent", label: "productOrderStateChangeEvent" },
   { key: "productOrderStateChangeEvent-v2", label: "productOrderStateChangeEvent-v2" },
   { key: "serviceTestResultEvent", label: "serviceTestResultEvent" },
-  { key: "serviceTestResultEvent_v2", label: "serviceTestResultEvent_v2" },
+  { key: "serviceTestResultEvent-v2", label: "serviceTestResultEvent-v2" },
   { key: "troubleTicketAttributeValueChangeEvent", label: "troubleTicketAttributeValueChangeEvent" },
   { key: "troubleTicketInformationRequiredEvent", label: "troubleTicketInformationRequiredEvent" },
   { key: "troubleTicketStateChangeEvent", label: "troubleTicketStateChangeEvent" },
@@ -38,19 +38,27 @@ async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   if (!r.ok) throw new Error(j?.error || r.statusText);
   return j as T;
 }
-
 function joinUrl(base: string, path: string): string {
   const b = base.replace(/\/+$/, "");
   const p = path.replace(/^\/+/, "");
   return `${b}/${p}`;
 }
-
 function toNone(v?: string) {
   return v && v.trim() ? v.trim() : "None";
 }
+// mantém hífens e letras; troca espaços por hífen
+function sanitizeKvmFragment(s: string) {
+  return s.trim().replace(/\s+/g, "-");
+}
 
 // Gera pares { name, value } no padrão do seu KVM para UMA API
-function buildKvmEntriesForApi(apiKey: string, baseWebhook: string, replicate: boolean, auth: AuthType, authFields: Record<string, string>) {
+function buildKvmEntriesForApi(
+  apiKey: string,
+  baseWebhook: string,
+  replicate: boolean,
+  auth: AuthType,
+  authFields: Record<string, string>
+) {
   const entries: { name: string; value: string }[] = [];
 
   // webhook
@@ -63,7 +71,6 @@ function buildKvmEntriesForApi(apiKey: string, baseWebhook: string, replicate: b
   // Por tipo de autenticação, gerar os demais campos
   switch (auth) {
     case "None":
-      // Sem nada além de webhook/type
       entries.push({ name: `${apiKey}_oauth`, value: "None" });
       entries.push({ name: `${apiKey}_scope`, value: "None" });
       entries.push({ name: `${apiKey}_key`, value: "None" });
@@ -77,7 +84,6 @@ function buildKvmEntriesForApi(apiKey: string, baseWebhook: string, replicate: b
       break;
 
     case "Basic":
-      // Key/Secret usados como user/pass
       entries.push({ name: `${apiKey}_oauth`, value: "None" });
       entries.push({ name: `${apiKey}_scope`, value: "None" });
       entries.push({ name: `${apiKey}_key`, value: toNone(authFields.key) });
@@ -142,7 +148,7 @@ function buildKvmEntriesForApi(apiKey: string, baseWebhook: string, replicate: b
       entries.push({ name: `${apiKey}_api_key`, value: "None" });
       break;
 
-    case "TokenFormUrlencoded": // semelhante ao Token, mas destacando content-type
+    case "TokenFormUrlencoded":
       entries.push({ name: `${apiKey}_oauth`, value: toNone(authFields.oauthUrl) });
       entries.push({ name: `${apiKey}_scope`, value: toNone(authFields.scope) });
       entries.push({ name: `${apiKey}_key`, value: toNone(authFields.key) });
@@ -166,8 +172,22 @@ const btnBase: React.CSSProperties = {
   border: "1px solid var(--border, #333)", cursor: "pointer", lineHeight: 1.1,
 };
 const btnPrimary: React.CSSProperties = { ...btnBase, background: "#facc15", color: "#111", borderColor: "#eab308" };
-const btnDanger: React.CSSProperties = { ...btnBase, background: "#ef4444", color: "#fff", borderColor: "#dc2626" };
 const btnNeutral: React.CSSProperties = { ...btnBase, background: "transparent", color: "var(--fg, #eee)" };
+
+type HistoryItem = {
+  ts: string;         // ISO
+  org: string;
+  env: string;
+  kvmName: string;
+  wo: string;
+  authType: AuthType;
+  baseUrl: string;
+  replicate: boolean;
+  apis: string[];
+};
+
+const HISTORY_KEY = "webhookListenerHistory";
+const HISTORY_MAX = 20;
 
 export default function WebhookListenerPage() {
   // org/env
@@ -176,13 +196,14 @@ export default function WebhookListenerPage() {
   const [envs, setEnvs] = useState<string[]>([]);
   const [env, setEnv] = useState("");
 
-  // tenant info
+  // tenant info (somente relatório em tela)
   const [empresa, setEmpresa] = useState("");
   const [nomeExtenso, setNomeExtenso] = useState("");
-  const [clientId, setClientId] = useState("");
+  const [clientId, setClientId] = useState(""); // vira o nome do KVM
   const [companyId, setCompanyId] = useState("");
   const [responsavel, setResponsavel] = useState("");
   const [email, setEmail] = useState("");
+  const [wo, setWo] = useState(""); // número da WO
 
   // base url + replicar
   const [baseUrl, setBaseUrl] = useState("");
@@ -209,6 +230,9 @@ export default function WebhookListenerPage() {
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // histórico
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
   // carregar org/env
   useEffect(() => { fetch("/api/orgs").then(r=>r.json()).then(setOrgs).catch(()=>setOrgs([])); }, []);
   useEffect(() => {
@@ -216,7 +240,28 @@ export default function WebhookListenerPage() {
     fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r=>r.json()).then(setEnvs).catch(()=>setEnvs([]));
   }, [org]);
 
-  // UI helpers
+  // carregar/salvar histórico no localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw) as HistoryItem[];
+        setHistory(Array.isArray(arr) ? arr : []);
+      }
+    } catch {}
+  }, []);
+  function pushHistory(item: HistoryItem) {
+    try {
+      const next = [item, ...history].slice(0, HISTORY_MAX);
+      setHistory(next);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    } catch {}
+  }
+  function clearHistory() {
+    setHistory([]);
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  }
+
   const apisList = useMemo(() => LISTENER_APIS, []);
 
   function toggleApi(k: string) {
@@ -230,6 +275,7 @@ export default function WebhookListenerPage() {
     if (!companyId.trim()) return "CompanyID é obrigatório";
     if (!responsavel.trim()) return "Responsável é obrigatório";
     if (!email.trim()) return "E-mail responsável é obrigatório";
+    if (!wo.trim()) return "Informe o número da WO";
     if (!org) return "Selecione a org";
     if (!env) return "Selecione o env";
     if (!baseUrl.trim()) return "Informe a URL Base";
@@ -243,7 +289,6 @@ export default function WebhookListenerPage() {
     }
     if (authType === "TokenAPI") {
       if (!oauthUrl.trim() || !login.trim() || !senha.trim()) return "TokenAPI: oauthUrl, login e senha são obrigatórios";
-      // key/secret opcionais
     }
     if (authType === "TokenPassword") {
       if (!oauthUrl.trim() || !username.trim() || !password.trim() || !key.trim() || !secret.trim())
@@ -259,8 +304,8 @@ export default function WebhookListenerPage() {
     const err = validateForm();
     if (err) { alert(err); return; }
 
-    // Nome do KVM
-    const kvmName = `listener-${companyId.trim()}`;
+    // Nome do KVM = cw-{ClientID}-webhook
+    const kvmName = `cw-${sanitizeKvmFragment(clientId)}-webhook`;
 
     // Campos de auth para reutilizar
     const authFields = {
@@ -269,18 +314,12 @@ export default function WebhookListenerPage() {
 
     // Monta entries por API selecionada
     const entries: { name: string; value: string }[] = [];
+    const pickedApis: string[] = [];
     for (const api of apisList) {
       if (!selectedApis[api.key]) continue;
+      pickedApis.push(api.key);
       entries.push(...buildKvmEntriesForApi(api.key, baseUrl.trim(), replicar, authType, authFields));
     }
-
-    // Você pode incluir alguns metadados gerais do tenant no KVM (opcional):
-    entries.push({ name: `tenant_empresa`, value: empresa.trim() });
-    entries.push({ name: `tenant_nome_extenso`, value: nomeExtenso.trim() });
-    entries.push({ name: `tenant_client_id`, value: clientId.trim() });
-    entries.push({ name: `tenant_company_id`, value: companyId.trim() });
-    entries.push({ name: `tenant_responsavel`, value: responsavel.trim() });
-    entries.push({ name: `tenant_email`, value: email.trim() });
 
     const json = {
       keyValueEntries: entries.map(e => ({ name: e.name, value: e.value })),
@@ -303,6 +342,19 @@ export default function WebhookListenerPage() {
 
       setMsg(`KVM ${kvmName} criado com sucesso!`);
       alert(`KVM ${kvmName} criado com sucesso!`);
+
+      // registra no histórico (em tela + localStorage)
+      pushHistory({
+        ts: new Date().toISOString(),
+        org,
+        env,
+        kvmName,
+        wo: wo.trim(),
+        authType,
+        baseUrl: baseUrl.trim(),
+        replicate: replicar,
+        apis: pickedApis,
+      });
     } catch (e:any) {
       const m = e?.message || String(e);
       setMsg("Falha: " + m);
@@ -317,9 +369,9 @@ export default function WebhookListenerPage() {
     <main>
       <h2>Webhook Listener — KVM padrão por tenant</h2>
 
-      {/* Dados do tenant */}
+      {/* Dados do cliente (somente para consulta; NÃO entram no KVM) */}
       <section className="card" style={{display:'grid', gap:8, maxWidth:980, marginBottom:12}}>
-        <h3 style={{margin:0}}>Dados do Cliente</h3>
+        <h3 style={{margin:0}}>Dados do Cliente (somente para registro)</h3>
         <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
           <label>Empresa Cliente*
             <input value={empresa} onChange={e=>setEmpresa(e.currentTarget.value)} />
@@ -327,7 +379,7 @@ export default function WebhookListenerPage() {
           <label>Nome extenso da empresa*
             <input value={nomeExtenso} onChange={e=>setNomeExtenso(e.currentTarget.value)} />
           </label>
-          <label>ClientID*
+          <label>ClientID* <small style={{opacity:.7}}>KVM = cw-ClientID-webhook</small>
             <input value={clientId} onChange={e=>setClientId(e.currentTarget.value)} />
           </label>
           <label>CompanyID*
@@ -339,7 +391,13 @@ export default function WebhookListenerPage() {
           <label>E-mail responsável*
             <input type="email" value={email} onChange={e=>setEmail(e.currentTarget.value)} />
           </label>
+          <label>WO (Work Order)*
+            <input value={wo} onChange={e=>setWo(e.currentTarget.value)} placeholder="ex.: WO-12345" />
+          </label>
         </div>
+        <small style={{opacity:.8}}>
+          Esses dados <b>não</b> são gravados no Apigee, apenas exibidos no histórico abaixo.
+        </small>
       </section>
 
       {/* Org/Env */}
@@ -401,7 +459,6 @@ export default function WebhookListenerPage() {
           </select>
         </label>
 
-        {/* Campos condicionais */}
         {authType === "Basic" && (
           <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8}}>
             <label>Key* <input value={key} onChange={e=>setKey(e.currentTarget.value)} /></label>
@@ -448,12 +505,53 @@ export default function WebhookListenerPage() {
         )}
       </section>
 
-      {/* Ação */}
-      <div style={{display:'flex', gap:8, alignItems:'center'}}>
+      {/* Ações */}
+      <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:16}}>
         <button style={btnPrimary} onClick={createKvm} disabled={creating}>Criar KVM</button>
-        <button style={btnNeutral} onClick={()=>{ /* reset leve */ setMsg(""); }} disabled={creating}>Limpar status</button>
         {msg && <small>{msg}</small>}
       </div>
+
+      {/* Histórico em tela */}
+      <section className="card" style={{display:'grid', gap:8, maxWidth:1100}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <h3 style={{margin:0}}>Últimos KVMs criados</h3>
+          <button style={btnNeutral} onClick={clearHistory}>Limpar histórico</button>
+        </div>
+        {history.length === 0 ? (
+          <div style={{opacity:.8}}>Nenhum registro ainda.</div>
+        ) : (
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%', borderCollapse:'collapse', minWidth:900}}>
+              <thead>
+                <tr>
+                  <th style={{textAlign:'left', padding:'6px'}}>Data</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>WO</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>Org/Env</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>KVM</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>Auth</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>Base URL</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>Replicar</th>
+                  <th style={{textAlign:'left', padding:'6px'}}>APIs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((h, i)=>(
+                  <tr key={i} style={{borderTop:'1px solid var(--border)'}}>
+                    <td style={{padding:'6px'}}>{new Date(h.ts).toLocaleString()}</td>
+                    <td style={{padding:'6px', fontFamily:'monospace'}}>{h.wo}</td>
+                    <td style={{padding:'6px'}}>{h.org} / {h.env}</td>
+                    <td style={{padding:'6px', fontFamily:'monospace'}}>{h.kvmName}</td>
+                    <td style={{padding:'6px'}}>{h.authType}</td>
+                    <td style={{padding:'6px'}}>{h.baseUrl}</td>
+                    <td style={{padding:'6px'}}>{h.replicate ? "sim" : "não"}</td>
+                    <td style={{padding:'6px'}}>{h.apis.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </main>
   );
 }
