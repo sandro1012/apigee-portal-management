@@ -47,14 +47,22 @@ function joinUrl(base: string, path: string): string {
 function toNone(v?: string) {
   return v && v.trim() ? v.trim() : "None";
 }
-// normaliza ClientID para usar hífens (sem underscores ou acentos) e colapsa repetidos
-function sanitizeKvmFragment(s: string) {
+
+/** Normaliza ClientID para o padrão com UNDERSCORE.
+ *  - remove acentos
+ *  - espaços e hifens → underscore
+ *  - remove símbolos fora de [A-Za-z0-9_]
+ *  - colapsa múltiplos underscores
+ *  - trim underscores extremos
+ *  Ex.: "Sandro Roberto LTDA" → "Sandro_Roberto_LTDA"
+ */
+function sanitizeClientIdToUnderscore(s: string) {
   const noAccents = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
   return noAccents
-    .replace(/[_\s]+/g, "-")           // espaços/underscores -> hífen
-    .replace(/[^A-Za-z0-9-]/g, "-")    // demais símbolos -> hífen
-    .replace(/-+/g, "-")               // colapsa múltiplos hífens
-    .replace(/^-|-$/g, "");            // remove hífen nas pontas
+    .replace(/[\s-]+/g, "_")       // espaço/hífen -> _
+    .replace(/[^A-Za-z0-9_]/g, "") // remove símbolos
+    .replace(/_+/g, "_")           // colapsa
+    .replace(/^_+|_+$/g, "");      // bordas
 }
 
 function buildKvmEntriesForApi(
@@ -88,7 +96,7 @@ function buildKvmEntriesForApi(
       break;
 
     case "Basic":
-      // APENAS key/secret — demais como "None"
+      // APENAS key/secret — demais "None"
       entries.push({ name: `${apiKey}_oauth`, value: "None" });
       entries.push({ name: `${apiKey}_scope`, value: "None" });
       entries.push({ name: `${apiKey}_key`, value: toNone(authFields.key) });
@@ -306,8 +314,9 @@ export default function WebhookListenerPage() {
     const err = validateForm();
     if (err) { alert(err); return; }
 
-    // Nome do KVM = cw-{ClientID}-webhook (normalizado para hífens)
-    const kvmName = `cw-${sanitizeKvmFragment(clientId)}-webhook`;
+    // Nome do KVM = cw-{ClientID}-webhook (ClientID com underscores)
+    const safeId = sanitizeClientIdToUnderscore(clientId);
+    const kvmName = `cw-${safeId}-webhook`;
 
     const authFields = { oauthUrl, scope, key, secret, grantType, apiKey, username, password, login, senha };
     const entries: { name: string; value: string }[] = [];
@@ -364,7 +373,7 @@ export default function WebhookListenerPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
           <label>Empresa Cliente* <input value={empresa} onChange={e => setEmpresa(e.currentTarget.value)} /></label>
           <label>Nome extenso da empresa* <input value={nomeExtenso} onChange={e => setNomeExtenso(e.currentTarget.value)} /></label>
-          <label>ClientID* <small style={{ opacity: .7 }}>KVM = cw-ClientID-webhook</small>
+          <label>ClientID* <small style={{ opacity: .7 }}>KVM = cw-ClientID-webhook (ClientID com _)</small>
             <input value={clientId} onChange={e => setClientId(e.currentTarget.value)} />
           </label>
           <label>CompanyID* <input value={companyId} onChange={e => setCompanyId(e.currentTarget.value)} /></label>
