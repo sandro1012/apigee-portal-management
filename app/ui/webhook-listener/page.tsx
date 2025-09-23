@@ -435,6 +435,76 @@ export default function WebhookListenerPage() {
     }
   }
 
+  // ====== Render helpers ======
+  function GlobalAuthFields() {
+    // mostra só os campos pertinentes ao defaultAuthType
+    if (defaultAuthType === "None") {
+      return <small style={{ opacity: .8 }}>Sem credenciais — usaremos "None" onde couber.</small>;
+    }
+    if (defaultAuthType === "Basic") {
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <label>key* <input value={defaultFields.key} onChange={e => setDefaultFields({ ...defaultFields, key: e.currentTarget.value })} /></label>
+          <label>secret* <input value={defaultFields.secret} onChange={e => setDefaultFields({ ...defaultFields, secret: e.currentTarget.value })} /></label>
+        </div>
+      );
+    }
+    if (defaultAuthType === "Api Key") {
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <label>x-api-key* <input value={defaultFields.apiKey} onChange={e => setDefaultFields({ ...defaultFields, apiKey: e.currentTarget.value })} /></label>
+        </div>
+      );
+    }
+    if (defaultAuthType === "Token") {
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <label>oauthUrl* <input value={defaultFields.oauthUrl} onChange={e => setDefaultFields({ ...defaultFields, oauthUrl: e.currentTarget.value })} /></label>
+          <label>scope <input value={defaultFields.scope} onChange={e => setDefaultFields({ ...defaultFields, scope: e.currentTarget.value })} /></label>
+          <label>grant_type <input value={defaultFields.grantType} onChange={e => setDefaultFields({ ...defaultFields, grantType: e.currentTarget.value })} /></label>
+          <label>key* <input value={defaultFields.key} onChange={e => setDefaultFields({ ...defaultFields, key: e.currentTarget.value })} /></label>
+          <label>secret* <input value={defaultFields.secret} onChange={e => setDefaultFields({ ...defaultFields, secret: e.currentTarget.value })} /></label>
+        </div>
+      );
+    }
+    if (defaultAuthType === "TokenAPI") {
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <label>oauthUrl* <input value={defaultFields.oauthUrl} onChange={e => setDefaultFields({ ...defaultFields, oauthUrl: e.currentTarget.value })} /></label>
+          <label>scope <input value={defaultFields.scope} onChange={e => setDefaultFields({ ...defaultFields, scope: e.currentTarget.value })} /></label>
+          <label>key (opcional) <input value={defaultFields.key} onChange={e => setDefaultFields({ ...defaultFields, key: e.currentTarget.value })} /></label>
+          <label>secret (opcional) <input value={defaultFields.secret} onChange={e => setDefaultFields({ ...defaultFields, secret: e.currentTarget.value })} /></label>
+          <label>login* <input value={defaultFields.login} onChange={e => setDefaultFields({ ...defaultFields, login: e.currentTarget.value })} /></label>
+          <label>senha* <input value={defaultFields.senha} onChange={e => setDefaultFields({ ...defaultFields, senha: e.currentTarget.value })} /></label>
+        </div>
+      );
+    }
+    if (defaultAuthType === "TokenPassword") {
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <label>oauthUrl* <input value={defaultFields.oauthUrl} onChange={e => setDefaultFields({ ...defaultFields, oauthUrl: e.currentTarget.value })} /></label>
+          <label>scope* <input value={defaultFields.scope} onChange={e => setDefaultFields({ ...defaultFields, scope: e.currentTarget.value })} /></label>
+          <label>key* <input value={defaultFields.key} onChange={e => setDefaultFields({ ...defaultFields, key: e.currentTarget.value })} /></label>
+          <label>secret* <input value={defaultFields.secret} onChange={e => setDefaultFields({ ...defaultFields, secret: e.currentTarget.value })} /></label>
+          <label>username* <input value={defaultFields.username} onChange={e => setDefaultFields({ ...defaultFields, username: e.currentTarget.value })} /></label>
+          <label>password* <input value={defaultFields.password} onChange={e => setDefaultFields({ ...defaultFields, password: e.currentTarget.value })} /></label>
+        </div>
+      );
+    }
+    if (defaultAuthType === "TokenFormUrlencoded") {
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <label>oauthUrl* <input value={defaultFields.oauthUrl} onChange={e => setDefaultFields({ ...defaultFields, oauthUrl: e.currentTarget.value })} /></label>
+          <label>scope <input value={defaultFields.scope} onChange={e => setDefaultFields({ ...defaultFields, scope: e.currentTarget.value })} /></label>
+          <label>grant_type <input value={defaultFields.grantType} onChange={e => setDefaultFields({ ...defaultFields, grantType: e.currentTarget.value })} /></label>
+          <label>key* <input value={defaultFields.key} onChange={e => setDefaultFields({ ...defaultFields, key: e.currentTarget.value })} /></label>
+          <label>secret* <input value={defaultFields.secret} onChange={e => setDefaultFields({ ...defaultFields, secret: e.currentTarget.value })} /></label>
+        </div>
+      );
+    }
+    return null;
+  }
+
   return (
     <main>
       <h2>Webhook Listener — KVM padrão por tenant</h2>
@@ -489,30 +559,21 @@ export default function WebhookListenerPage() {
         <small>Ex.: base + <code>/listener/productOrderStateChangeEvent</code>. Para APIs terminando em <code>-v2</code>, o <b>path</b> não leva o <code>-v2</code>.</small>
       </section>
 
-      {/* Defaults globais (opcional) */}
+      {/* Modelo global de autenticação (opcional) */}
       <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
         <h3 style={{ margin: 0 }}>Modelo global de autenticação (opcional)</h3>
         <label>Tipo (default)
-          <select value={defaultAuthType} onChange={e => setDefaultAuthType(e.currentTarget.value as AuthType)}>
+          <select
+            value={defaultAuthType}
+            onChange={e => setDefaultAuthType(e.currentTarget.value as AuthType)}
+          >
             {["None","Basic","Api Key","Token","TokenAPI","TokenPassword","TokenFormUrlencoded"].map(t => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </label>
-        {/* Campos do default — mostrados genericamente */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
-          <label>URL OAuth2 <input value={defaultFields.oauthUrl} onChange={e => setDefaultFields({ ...defaultFields, oauthUrl: e.currentTarget.value })} /></label>
-          <label>scope <input value={defaultFields.scope} onChange={e => setDefaultFields({ ...defaultFields, scope: e.currentTarget.value })} /></label>
-          <label>grant_type <input value={defaultFields.grantType} onChange={e => setDefaultFields({ ...defaultFields, grantType: e.currentTarget.value })} /></label>
-          <label>key <input value={defaultFields.key} onChange={e => setDefaultFields({ ...defaultFields, key: e.currentTarget.value })} /></label>
-          <label>secret <input value={defaultFields.secret} onChange={e => setDefaultFields({ ...defaultFields, secret: e.currentTarget.value })} /></label>
-          <label>x-api-key <input value={defaultFields.apiKey} onChange={e => setDefaultFields({ ...defaultFields, apiKey: e.currentTarget.value })} /></label>
-          <label>username <input value={defaultFields.username} onChange={e => setDefaultFields({ ...defaultFields, username: e.currentTarget.value })} /></label>
-          <label>password <input value={defaultFields.password} onChange={e => setDefaultFields({ ...defaultFields, password: e.currentTarget.value })} /></label>
-          <label>login <input value={defaultFields.login} onChange={e => setDefaultFields({ ...defaultFields, login: e.currentTarget.value })} /></label>
-          <label>senha <input value={defaultFields.senha} onChange={e => setDefaultFields({ ...defaultFields, senha: e.currentTarget.value })} /></label>
-        </div>
-        <small>Os valores acima servem como **fallback** quando a API selecionada não tiver um valor próprio.</small>
+        <GlobalAuthFields />
+        <small>Os valores acima servem como <b>fallback</b> quando a API selecionada não tiver um valor próprio.</small>
       </section>
 
       {/* Seleção por API com auth específico */}
@@ -529,7 +590,7 @@ export default function WebhookListenerPage() {
               </tr>
             </thead>
             <tbody>
-              {apisList.map(a => {
+              {LISTENER_APIS.map(a => {
                 const s = apisState[a.key] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
                 return (
                   <tr key={a.key} style={{ borderTop: "1px solid var(--border)" }}>
@@ -553,7 +614,6 @@ export default function WebhookListenerPage() {
                       </select>
                     </td>
                     <td style={{ padding: "6px" }}>
-                      {/* Campos variam pelo tipo — só mostram se estiver selecionada */}
                       {s.checked && (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
                           {s.authType === "Basic" && (
@@ -619,7 +679,7 @@ export default function WebhookListenerPage() {
   );
 }
 
-function HistoryTable({ history, onClear }: { history: HistoryItem[]; onClear: () => void }) {
+function HistoryTable({ history, onClear }: { history: any[]; onClear: () => void }) {
   return (
     <section className="card" style={{ display: "grid", gap: 8, maxWidth: 1100 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -652,7 +712,7 @@ function HistoryTable({ history, onClear }: { history: HistoryItem[]; onClear: (
                   <td style={{ padding: "6px" }}>{h.baseUrl}</td>
                   <td style={{ padding: "6px" }}>{h.replicate ? "sim" : "não"}</td>
                   <td style={{ padding: "6px" }}>
-                    {h.apis.map(a => `${a.key} (${a.authType})`).join(", ")}
+                    {h.apis.map((a: any) => `${a.key} (${a.authType})`).join(", ")}
                   </td>
                 </tr>
               ))}
