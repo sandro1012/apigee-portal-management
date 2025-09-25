@@ -32,7 +32,7 @@ const LISTENER_APIS: ListenerApi[] = [
   { key: "workOrderStateChangeEvent", label: "workOrderStateChangeEvent" },
 ];
 
-// helpers
+// ===== helpers comuns =====
 function sanitizeClientIdToUnderscore(s: string) {
   const noAccents = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
   return noAccents
@@ -41,18 +41,10 @@ function sanitizeClientIdToUnderscore(s: string) {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
 }
-function joinUrl(base: string, path: string): string {
-  const b = (base || "").replace(/\/+$/, "");
-  const p = (path || "").replace(/^\/+/, "");
-  if (!b) return path || "";
-  if (!p) return b;
-  return `${b}/${p}`;
-}
 function dash(v?: string) {
   return v && v.trim() ? v.trim() : "-";
 }
 
-// default fields
 type AuthFields = {
   oauthUrl?: string;
   scope?: string;
@@ -80,7 +72,6 @@ function defaultAuthFields(): AuthFields {
   };
 }
 
-// por API
 type PerApiConfig = {
   checked: boolean;
   authType: AuthType;
@@ -97,17 +88,19 @@ type HistoryItem = {
   replicate: boolean;
   apis: { key: string; authType: AuthType }[];
 };
+
 const HISTORY_KEY = "webhookListenerHistory";
 const HISTORY_MAX = 20;
 
+// ====== página ======
 export default function WebhookListenerPage() {
-  // org/env
+  // org/env (criação)
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState("");
   const [envs, setEnvs] = useState<string[]>([]);
   const [env, setEnv] = useState("");
 
-  // dados cliente (histórico)
+  // dados cliente (registro local)
   const [empresa, setEmpresa] = useState("");
   const [nomeExtenso, setNomeExtenso] = useState("");
   const [clientId, setClientId] = useState("");
@@ -116,15 +109,15 @@ export default function WebhookListenerPage() {
   const [email, setEmail] = useState("");
   const [wo, setWo] = useState("");
 
-  // url base / replicar
+  // base/replicar (criação)
   const [baseUrl, setBaseUrl] = useState("");
   const [replicar, setReplicar] = useState(true);
 
-  // modelo global
+  // modelo global (fallback)
   const [defaultAuthType, setDefaultAuthType] = useState<AuthType>("None");
   const [defaultFields, setDefaultFields] = useState<AuthFields>(defaultAuthFields());
 
-  // por API
+  // por API (criação/edição)
   const [apisState, setApisState] = useState<Record<string, PerApiConfig>>({});
 
   // criação / status
@@ -133,13 +126,39 @@ export default function WebhookListenerPage() {
 
   // histórico
   const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  // ===== gerenciamento existentes =====
+  const [mOrg, setMOrg] = useState("");
+  const [mEnvs, setMEnvs] = useState<string[]>([]);
+  const [mEnv, setMEnv] = useState("");
+  const [mKvms, setMKvms] = useState<string[]>([]);
+  const [mKvm, setMKvm] = useState("");
+  const [mLoading, setMLoading] = useState(false);
+  const [mMsg, setMMsg] = useState("");
+  const [mBaseUrl, setMBaseUrl] = useState("");
+  const [mReplicar, setMReplicar] = useState(true);
+
+  // tabs
+  const [tab, setTab] = useState<"create" | "manage">("create");
+
+  // bootstrap orgs
   useEffect(() => {
     fetch("/api/orgs").then(r => r.json()).then(setOrgs).catch(() => setOrgs([]));
   }, []);
+
+  // envs para criação
   useEffect(() => {
     if (!org) { setEnv(""); setEnvs([]); return; }
     fetch(`/api/envs?org=${encodeURIComponent(org)}`).then(r => r.json()).then(setEnvs).catch(() => setEnvs([]));
   }, [org]);
+
+  // envs para manage
+  useEffect(() => {
+    if (!mOrg) { setMEnv(""); setMEnvs([]); return; }
+    fetch(`/api/envs?org=${encodeURIComponent(mOrg)}`).then(r => r.json()).then(setMEnvs).catch(() => setMEnvs([]);
+  }, [mOrg]);
+
+  // histórico local
   useEffect(() => {
     try {
       const raw = localStorage.getItem(HISTORY_KEY);
@@ -158,7 +177,7 @@ export default function WebhookListenerPage() {
     try { localStorage.removeItem(HISTORY_KEY); } catch {}
   }
 
-  // inicializa estado por API
+  // inicializa per-API
   const apisList = useMemo(() => LISTENER_APIS, []);
   useEffect(() => {
     setApisState(prev => {
@@ -171,7 +190,7 @@ export default function WebhookListenerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apisList.length]);
 
-  // mutadores
+  // mutadores comuns
   function initApiStateIfNeeded(k: string) {
     setApisState(prev => prev[k] ? prev : ({ ...prev, [k]: { checked: false, authType: defaultAuthType, fields: defaultAuthFields() } }));
   }
@@ -194,21 +213,22 @@ export default function WebhookListenerPage() {
     });
   }
 
-  // validação
+  // ===== valida/cria (igual versão anterior) =====
   function validateForm(): string | null {
-    if (!empresa.trim()) return "Empresa Cliente é obrigatório";
-    if (!nomeExtenso.trim()) return "Nome extenso da empresa é obrigatório";
-    if (!clientId.trim()) return "ClientID é obrigatório";
-    if (!companyId.trim()) return "CompanyID é obrigatório";
-    if (!responsavel.trim()) return "Responsável é obrigatório";
-    if (!email.trim()) return "E-mail responsável é obrigatório";
-    if (!wo.trim()) return "Informe o número da WO";
-    if (!org) return "Selecione a org";
-    if (!env) return "Selecione o env";
-    if (!baseUrl.trim()) return "Informe a URL Base";
+    if (tab === "create") {
+      if (!empresa.trim()) return "Empresa Cliente é obrigatório";
+      if (!nomeExtenso.trim()) return "Nome extenso da empresa é obrigatório";
+      if (!clientId.trim()) return "ClientID é obrigatório";
+      if (!companyId.trim()) return "CompanyID é obrigatório";
+      if (!responsavel.trim()) return "Responsável é obrigatório";
+      if (!email.trim()) return "E-mail responsável é obrigatório";
+      if (!wo.trim()) return "Informe o número da WO";
+      if (!org) return "Selecione a org";
+      if (!env) return "Selecione o env";
+      if (!baseUrl.trim()) return "Informe a URL Base";
+    }
     if (!Object.values(apisState).some(a => a.checked)) return "Selecione ao menos uma API listener";
 
-    // mínimos por API
     for (const [k, cfg] of Object.entries(apisState)) {
       if (!cfg.checked) continue;
       const F = (x: keyof AuthFields) => cfg.fields[x] || defaultFields[x] || "";
@@ -235,7 +255,6 @@ export default function WebhookListenerPage() {
     return null;
   }
 
-  // serialização NOVO MODELO (13 campos)
   function valueArrayForApi(
     apiKey: string,
     base: string,
@@ -244,7 +263,6 @@ export default function WebhookListenerPage() {
     fields: AuthFields,
     fallback?: { authType?: AuthType; fields?: AuthFields }
   ): string[] {
-    // path sem -v2
     const apiPathName = apiKey.replace(/-v2$/, "");
     const path_url = replicate ? `/listener/${apiPathName}` : "-";
     const url_base = dash(base);
@@ -257,7 +275,6 @@ export default function WebhookListenerPage() {
       return "";
     };
 
-    // todos começam com url_base, path_url e type
     let url_token = "-";
     let granttype = "-";
     let scope = "-";
@@ -271,7 +288,6 @@ export default function WebhookListenerPage() {
 
     switch (auth) {
       case "None":
-        // tudo '-' mesmo
         break;
       case "Basic":
         key = dash(F("key"));
@@ -281,12 +297,6 @@ export default function WebhookListenerPage() {
         api_key = dash(F("apiKey"));
         break;
       case "Token":
-        url_token = dash(F("oauthUrl"));
-        granttype = dash(F("grantType") || "client_credentials");
-        scope = dash(F("scope"));
-        key = dash(F("key"));
-        secret = dash(F("secret"));
-        break;
       case "TokenFormUrlencoded":
         url_token = dash(F("oauthUrl"));
         granttype = dash(F("grantType") || "client_credentials");
@@ -317,7 +327,7 @@ export default function WebhookListenerPage() {
     return [
       url_base,        // 1
       path_url,        // 2
-      auth,            // 3 (type)
+      auth,            // 3
       url_token,       // 4
       granttype,       // 5
       scope,           // 6
@@ -338,10 +348,7 @@ export default function WebhookListenerPage() {
     const safeId = sanitizeClientIdToUnderscore(clientId);
     const kvmName = `cw-${safeId}_webhook`;
 
-    // monta a legenda + linhas das APIs selecionadas
     const entries: { name: string; value: string }[] = [];
-
-    // legenda (com espaços, conforme especificação)
     entries.push({
       name: "00-Legenda",
       value:
@@ -363,10 +370,7 @@ export default function WebhookListenerPage() {
         { authType: defaultAuthType, fields: defaultFields }
       );
 
-      entries.push({
-        name: a.key,
-        value: parts.join("|"),
-      });
+      entries.push({ name: a.key, value: parts.join("|") });
     }
 
     const json = { keyValueEntries: entries, nextPageToken: "" };
@@ -386,8 +390,6 @@ export default function WebhookListenerPage() {
 
       setMsg(`KVM ${kvmName} criado com sucesso!`);
       alert(`KVM ${kvmName} criado com sucesso!`);
-
-      // histórico
       pushHistory({
         ts: new Date().toISOString(),
         org,
@@ -406,102 +408,385 @@ export default function WebhookListenerPage() {
     }
   }
 
+  // ======== Manage: listar + carregar + editar + salvar ========
+
+  async function mListKvms() {
+    if (!mOrg || !mEnv) return;
+    setMLoading(true); setMMsg("");
+    try {
+      const res = await fetch("/api/kvms", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ org: mOrg, env: mEnv }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || res.statusText);
+      const names: string[] = Array.isArray(j) ? j : Array.isArray(j?.names) ? j.names : [];
+      // filtra cw-*_webhook
+      const onlyWebhook = names.filter((n) => /^cw-.*_webhook$/i.test(String(n || ""))).sort((a,b)=>a.localeCompare(b));
+      setMKvms(onlyWebhook);
+      if (!onlyWebhook.includes(mKvm)) setMKvm("");
+    } catch (e:any) {
+      setMMsg("Falha ao listar: " + (e.message || String(e)));
+      setMKvms([]);
+    } finally {
+      setMLoading(false);
+    }
+  }
+
+  function parseCompactValueToParts(valRaw: string): string[] {
+    const val = (valRaw || "").trim();
+    const parts = val.split("|");
+    // garante 13
+    while (parts.length < 13) parts.push("-");
+    return parts.slice(0, 13).map(s => (s ?? "").trim());
+  }
+
+  function detectAuthTypeFromParts(parts: string[]): AuthType {
+    const t = (parts[2] || "").trim() as AuthType;
+    const known: AuthType[] = ["None","Basic","Api Key","Token","TokenAPI","TokenPassword","TokenFormUrlencoded"];
+    return known.includes(t) ? t : "None";
+  }
+
+  function fieldsFromParts(auth: AuthType, parts: string[]): AuthFields {
+    const [
+      _url_base, _path_url, _type,
+      url_token, granttype, scope,
+      key, secret, login, senha, username, password, api_key
+    ] = parts;
+
+    const F = (s?: string) => (s && s !== "-" ? s : "");
+
+    switch (auth) {
+      case "Basic": return { key: F(key), secret: F(secret) };
+      case "Api Key": return { apiKey: F(api_key) };
+      case "Token": return {
+        oauthUrl: F(url_token),
+        grantType: F(granttype) || "client_credentials",
+        scope: F(scope),
+        key: F(key),
+        secret: F(secret),
+      };
+      case "TokenFormUrlencoded": return {
+        oauthUrl: F(url_token),
+        grantType: F(granttype) || "client_credentials",
+        scope: F(scope),
+        key: F(key),
+        secret: F(secret),
+      };
+      case "TokenAPI": return {
+        oauthUrl: F(url_token),
+        scope: F(scope),
+        login: F(login),
+        senha: F(senha),
+        key: F(key),
+        secret: F(secret),
+      };
+      case "TokenPassword": return {
+        oauthUrl: F(url_token),
+        scope: F(scope),
+        key: F(key),
+        secret: F(secret),
+        username: F(username),
+        password: F(password),
+      };
+      case "None":
+      default:
+        return {};
+    }
+  }
+
+  function deriveBaseAndReplicate(entries: {name:string; value:string}[]) {
+    // tenta pegar o 1º item não-legenda
+    const first = entries.find(e => e.name !== "00-Legenda");
+    if (!first) return { base: "", replicate: true };
+    const parts = parseCompactValueToParts(first.value);
+    const base = (parts[0] || "-"); // url_base
+    const path = (parts[1] || "-"); // path_url
+    const replicate = !!(path && path !== "-" && path.startsWith("/listener/"));
+    return { base: base === "-" ? "" : base, replicate };
+  }
+
+  async function mLoadKvm() {
+    if (!mOrg || !mEnv || !mKvm) return;
+    setMMsg("Carregando KVM...");
+
+    try {
+      const res = await fetch("/api/kvm/export", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ org: mOrg, env: mEnv, kvm: mKvm }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+
+      const arr: {name:string; value:string}[] = Array.isArray(data?.keyValueEntries) ? data.keyValueEntries : [];
+      const entries = arr.filter(e => e && typeof e.name === "string" && typeof e.value === "string");
+
+      const { base, replicate } = deriveBaseAndReplicate(entries);
+      setMBaseUrl(base);
+      setMReplicar(replicate);
+
+      // zera estado por API
+      const seed: Record<string, PerApiConfig> = {};
+      for (const a of LISTENER_APIS) {
+        seed[a.key] = { checked: false, authType: "None", fields: defaultAuthFields() };
+      }
+
+      // para cada entrada (ignora 00-Legenda)
+      for (const e of entries) {
+        if (e.name === "00-Legenda") continue;
+        const apiKey = e.name;
+        if (!(apiKey in seed)) {
+          // se vier uma API fora da lista, cria slot também:
+          seed[apiKey] = { checked: true, authType: "None", fields: defaultAuthFields() };
+        }
+        const parts = parseCompactValueToParts(e.value);
+        const auth = detectAuthTypeFromParts(parts);
+        const fields = fieldsFromParts(auth, parts);
+        seed[apiKey] = { checked: true, authType: auth, fields };
+      }
+
+      setApisState(seed);
+      setMMsg("KVM carregado. Edite e salve.");
+      setTab("manage");
+    } catch (e:any) {
+      setMMsg("Falha ao carregar: " + (e.message || String(e)));
+    }
+  }
+
+  async function mSaveKvm() {
+    if (!mOrg || !mEnv || !mKvm) { alert("Selecione org/env/KVM."); return; }
+    if (!Object.values(apisState).some(a => a.checked)) { alert("Selecione ao menos uma API para salvar."); return; }
+
+    setMMsg("Salvando KVM...");
+    try {
+      const entries: { name: string; value: string }[] = [];
+      entries.push({
+        name: "00-Legenda",
+        value:
+          "url_base | path_url | type | url_token | granttype | scope | key | secret | login | senha | username | password | api_key",
+      });
+
+      for (const api of Object.keys(apisState)) {
+        const cfg = apisState[api];
+        if (!cfg.checked) continue;
+
+        const parts = valueArrayForApi(
+          api,
+          mBaseUrl.trim(),
+          mReplicar,
+          cfg.authType,
+          cfg.fields,
+          // em edição, não usamos defaultFields como fallback — o que está na UI é o que vale
+          undefined
+        );
+        entries.push({ name: api, value: parts.join("|") });
+      }
+
+      const json = { keyValueEntries: entries, nextPageToken: "" };
+
+      const res = await fetch("/api/kvm/update", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ org: mOrg, env: mEnv, kvm: mKvm, data: json }),
+      });
+      const j = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(j?.error || res.statusText);
+
+      setMMsg("KVM salvo com sucesso!");
+      alert("KVM salvo com sucesso!");
+    } catch (e:any) {
+      setMMsg("Falha ao salvar: " + (e.message || String(e)));
+      alert("Falha ao salvar KVM: " + (e.message || String(e)));
+    }
+  }
+
   // ====== UI ======
   return (
     <main>
       <h2>Webhook Listener — KVM compacto por tenant</h2>
 
-      {/* Dados do cliente (histórico apenas) */}
-      <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Dados do Cliente (somente registro na página)</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-          <label>Empresa Cliente* <input value={empresa} onChange={e => setEmpresa(e.currentTarget.value)} /></label>
-          <label>Nome extenso da empresa* <input value={nomeExtenso} onChange={e => setNomeExtenso(e.currentTarget.value)} /></label>
-          <label>ClientID* <small style={{ opacity: .7 }}>KVM = cw-ClientID_webhook</small>
-            <input value={clientId} onChange={e => setClientId(e.currentTarget.value)} />
-          </label>
-          <label>CompanyID* <input value={companyId} onChange={e => setCompanyId(e.currentTarget.value)} /></label>
-          <label>Responsável* <input value={responsavel} onChange={e => setResponsavel(e.currentTarget.value)} /></label>
-          <label>E-mail responsável* <input type="email" value={email} onChange={e => setEmail(e.currentTarget.value)} /></label>
-          <label>WO (Work Order)* <input value={wo} onChange={e => setWo(e.currentTarget.value)} placeholder="ex.: WO-12345" /></label>
-        </div>
-        <small style={{ opacity: .8 }}>Esses dados não vão para o Apigee — ficam no histórico abaixo.</small>
-      </section>
-
-      {/* Org/Env */}
-      <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Destino (org/env)</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
-          <label>Org*
-            <select value={org} onChange={e => setOrg(e.currentTarget.value)}>
-              <option value="">Selecione...</option>
-              {orgs.map(o => (<option key={o} value={o}>{o}</option>))}
-            </select>
-          </label>
-          <label>Env*
-            <select value={env} onChange={e => setEnv(e.currentTarget.value)}>
-              <option value="">Selecione...</option>
-              {envs.map(x => (<option key={x} value={x}>{x}</option>))}
-            </select>
-          </label>
-          <div />
-        </div>
-      </section>
-
-      {/* Base URL */}
-      <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Endpoint base</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-          <label>URL Base* <input placeholder="https://cliente.com.br" value={baseUrl} onChange={e => setBaseUrl(e.currentTarget.value)} /></label>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="checkbox" checked={replicar} onChange={e => setReplicar(e.currentTarget.checked)} />
-            Replicar sufixo <code>/listener/{"{api}"}</code> (remove <code>-v2</code> no path)
-          </label>
-        </div>
-      </section>
-
-      {/* Modelo global */}
-      <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Modelo global de autenticação (opcional)</h3>
-        <label>Tipo (default)
-          <select value={defaultAuthType} onChange={e => setDefaultAuthType(e.currentTarget.value as AuthType)}>
-            {["None","Basic","Api Key","Token","TokenAPI","TokenPassword","TokenFormUrlencoded"].map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </label>
-        <GlobalAuthFields
-          defaultAuthType={defaultAuthType}
-          defaultFields={defaultFields}
-          setDefaultFields={setDefaultFields}
-        />
-        <small>Usado como <b>fallback</b> quando a API não tiver valores próprios.</small>
-      </section>
-
-      {/* Seleção de APIs */}
-      <ApisTable
-        apis={LISTENER_APIS}
-        apisState={apisState}
-        defaultAuthType={defaultAuthType}
-        setApiAuthType={setApiAuthType}
-        setApiField={setApiField}
-        toggleApi={toggleApi}
-        initApiStateIfNeeded={initApiStateIfNeeded}
-      />
-
-      {/* Ações */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-        <button onClick={createKvm} disabled={creating} style={{ borderRadius: 8, padding: "8px 12px", fontWeight: 600, border: "1px solid var(--border,#333)", background: "#facc15", color: "#111" }}>
-          Criar KVM
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button
+          onClick={()=>setTab("create")}
+          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border,#333)", background: tab==="create" ? "#facc15" : "transparent", color: tab==="create" ? "#111" : "var(--fg,#eee)" }}
+        >
+          Criar novo
         </button>
-        {msg && <small>{msg}</small>}
+        <button
+          onClick={()=>setTab("manage")}
+          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border,#333)", background: tab==="manage" ? "#facc15" : "transparent", color: tab==="manage" ? "#111" : "var(--fg,#eee)" }}
+        >
+          Gerenciar existentes
+        </button>
       </div>
 
-      {/* Histórico */}
-      <HistoryTable history={history} onClear={clearHistory} />
+      {tab === "create" && (
+        <>
+          {/* Dados do cliente (registro) */}
+          <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Dados do Cliente (somente registro na página)</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+              <label>Empresa Cliente* <input value={empresa} onChange={e => setEmpresa(e.currentTarget.value)} /></label>
+              <label>Nome extenso da empresa* <input value={nomeExtenso} onChange={e => setNomeExtenso(e.currentTarget.value)} /></label>
+              <label>ClientID* <small style={{ opacity: .7 }}>KVM = cw-ClientID_webhook</small>
+                <input value={clientId} onChange={e => setClientId(e.currentTarget.value)} />
+              </label>
+              <label>CompanyID* <input value={companyId} onChange={e => setCompanyId(e.currentTarget.value)} /></label>
+              <label>Responsável* <input value={responsavel} onChange={e => setResponsavel(e.currentTarget.value)} /></label>
+              <label>E-mail responsável* <input type="email" value={email} onChange={e => setEmail(e.currentTarget.value)} /></label>
+              <label>WO (Work Order)* <input value={wo} onChange={e => setWo(e.currentTarget.value)} placeholder="ex.: WO-12345" /></label>
+            </div>
+            <small style={{ opacity: .8 }}>Esses dados não vão para o Apigee — ficam no histórico abaixo.</small>
+          </section>
+
+          {/* Org/Env */}
+          <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Destino (org/env)</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+              <label>Org*
+                <select value={org} onChange={e => setOrg(e.currentTarget.value)}>
+                  <option value="">Selecione...</option>
+                  {orgs.map(o => (<option key={o} value={o}>{o}</option>))}
+                </select>
+              </label>
+              <label>Env*
+                <select value={env} onChange={e => setEnv(e.currentTarget.value)}>
+                  <option value="">Selecione...</option>
+                  {envs.map(x => (<option key={x} value={x}>{x}</option>))}
+                </select>
+              </label>
+              <div />
+            </div>
+          </section>
+
+          {/* Base URL */}
+          <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Endpoint base</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+              <label>URL Base* <input placeholder="https://cliente.com.br" value={baseUrl} onChange={e => setBaseUrl(e.currentTarget.value)} /></label>
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" checked={replicar} onChange={e => setReplicar(e.currentTarget.checked)} />
+                Replicar sufixo <code>/listener/{"{api}"}</code> (remove <code>-v2</code> no path)
+              </label>
+            </div>
+          </section>
+
+          {/* Modelo global */}
+          <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Modelo global de autenticação (opcional)</h3>
+            <label>Tipo (default)
+              <select value={defaultAuthType} onChange={e => setDefaultAuthType(e.currentTarget.value as AuthType)}>
+                {["None","Basic","Api Key","Token","TokenAPI","TokenPassword","TokenFormUrlencoded"].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+            <GlobalAuthFields
+              defaultAuthType={defaultAuthType}
+              defaultFields={defaultFields}
+              setDefaultFields={setDefaultFields}
+            />
+            <small>Usado como <b>fallback</b> quando a API não tiver valores próprios.</small>
+          </section>
+
+          {/* Seleção de APIs */}
+          <ApisTable
+            apis={LISTENER_APIS}
+            apisState={apisState}
+            defaultAuthType={defaultAuthType}
+            setApiAuthType={setApiAuthType}
+            setApiField={setApiField}
+            toggleApi={toggleApi}
+            initApiStateIfNeeded={initApiStateIfNeeded}
+          />
+
+          {/* Ações */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+            <button onClick={createKvm} disabled={creating} style={{ borderRadius: 8, padding: "8px 12px", fontWeight: 600, border: "1px solid var(--border,#333)", background: "#facc15", color: "#111" }}>
+              Criar KVM
+            </button>
+            {msg && <small>{msg}</small>}
+          </div>
+
+          {/* Histórico */}
+          <HistoryTable history={history} onClear={clearHistory} />
+        </>
+      )}
+
+      {tab === "manage" && (
+        <>
+          {/* Seleção org/env/KVM */}
+          <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Gerenciar KVMs existentes</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+              <label>Org
+                <select value={mOrg} onChange={e => setMOrg(e.currentTarget.value)}>
+                  <option value="">Selecione...</option>
+                  {orgs.map(o => (<option key={o} value={o}>{o}</option>))}
+                </select>
+              </label>
+              <label>Env
+                <select value={mEnv} onChange={e => setMEnv(e.currentTarget.value)}>
+                  <option value="">Selecione...</option>
+                  {mEnvs.map(x => (<option key={x} value={x}>{x}</option>))}
+                </select>
+              </label>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button onClick={mListKvms} disabled={!mOrg || !mEnv || mLoading}>Listar KVMs</button>
+                {mLoading && <small>Carregando…</small>}
+              </div>
+            </div>
+
+            <label>KVM (apenas cw-*_webhook)
+              <select value={mKvm} onChange={e => setMKvm(e.currentTarget.value)}>
+                <option value="">Selecione...</option>
+                {mKvms.map(k => (<option key={k} value={k}>{k}</option>))}
+              </select>
+            </label>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={mLoadKvm} disabled={!mKvm}>Carregar para edição</button>
+              {mMsg && <small>{mMsg}</small>}
+            </div>
+          </section>
+
+          {/* Base URL da edição */}
+          <section className="card" style={{ display: "grid", gap: 8, maxWidth: 980, marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Endpoint base (edição)</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+              <label>URL Base <input placeholder="https://cliente.com.br" value={mBaseUrl} onChange={e => setMBaseUrl(e.currentTarget.value)} /></label>
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" checked={mReplicar} onChange={e => setMReplicar(e.currentTarget.checked)} />
+                Replicar sufixo <code>/listener/{"{api}"}</code> (remove <code>-v2</code> no path)
+              </label>
+            </div>
+          </section>
+
+          {/* Tabela de APIs reutilizando o mesmo componente */}
+          <ApisTable
+            apis={LISTENER_APIS}
+            apisState={apisState}
+            defaultAuthType={"None" /* em edição, não forçamos default */}
+            setApiAuthType={setApiAuthType}
+            setApiField={setApiField}
+            toggleApi={toggleApi}
+            initApiStateIfNeeded={initApiStateIfNeeded}
+          />
+
+          {/* Salvar edição */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+            <button onClick={mSaveKvm} disabled={!mOrg || !mEnv || !mKvm} style={{ borderRadius: 8, padding: "8px 12px", fontWeight: 600, border: "1px solid var(--border,#333)", background: "#facc15", color: "#111" }}>
+              Salvar alterações
+            </button>
+          </div>
+        </>
+      )}
     </main>
   );
 }
 
-// ===== UI subcomponents =====
+// ====== Subcomponents ======
 function GlobalAuthFields({
   defaultAuthType,
   defaultFields,
@@ -595,6 +880,13 @@ function ApisTable({
   toggleApi: (k: string) => void;
   initApiStateIfNeeded: (k: string) => void;
 }) {
+  // mantém possíveis APIs “extras” vindas de KVM (que não estão em LISTENER_APIS)
+  const keys = useMemo(() => {
+    const set = new Set<string>(apis.map(a=>a.key));
+    Object.keys(apisState).forEach(k => set.add(k));
+    return Array.from(set);
+  }, [apis, apisState]);
+
   return (
     <section className="card" style={{ display: "grid", gap: 10, maxWidth: 1100, marginBottom: 12 }}>
       <h3 style={{ margin: 0 }}>APIs listener</h3>
@@ -609,22 +901,22 @@ function ApisTable({
             </tr>
           </thead>
           <tbody>
-            {apis.map(a => {
-              const s = apisState[a.key] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
+            {keys.map(k => {
+              const s = apisState[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
               return (
-                <tr key={a.key} style={{ borderTop: "1px solid var(--border)" }}>
+                <tr key={k} style={{ borderTop: "1px solid var(--border)" }}>
                   <td style={{ padding: "6px" }}>
                     <input
                       type="checkbox"
                       checked={!!s.checked}
-                      onChange={() => { initApiStateIfNeeded(a.key); toggleApi(a.key); }}
+                      onChange={() => { initApiStateIfNeeded(k); toggleApi(k); }}
                     />
                   </td>
-                  <td style={{ padding: "6px" }}>{a.label}</td>
+                  <td style={{ padding: "6px" }}>{k}</td>
                   <td style={{ padding: "6px" }}>
                     <select
                       value={s.authType}
-                      onChange={e => setApiAuthType(a.key, e.currentTarget.value as AuthType)}
+                      onChange={e => setApiAuthType(k, e.currentTarget.value as AuthType)}
                       disabled={!s.checked}
                     >
                       {["None","Basic","Api Key","Token","TokenAPI","TokenPassword","TokenFormUrlencoded"].map(t => (
@@ -637,40 +929,40 @@ function ApisTable({
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
                         {s.authType === "Basic" && (
                           <>
-                            <input placeholder="key*" value={s.fields.key || ""} onChange={e => setApiField(a.key, "key", e.currentTarget.value)} />
-                            <input placeholder="secret*" value={s.fields.secret || ""} onChange={e => setApiField(a.key, "secret", e.currentTarget.value)} />
+                            <input placeholder="key*" value={s.fields.key || ""} onChange={e => setApiField(k, "key", e.currentTarget.value)} />
+                            <input placeholder="secret*" value={s.fields.secret || ""} onChange={e => setApiField(k, "secret", e.currentTarget.value)} />
                           </>
                         )}
                         {s.authType === "Api Key" && (
-                          <input placeholder="x-api-key*" value={s.fields.apiKey || ""} onChange={e => setApiField(a.key, "apiKey", e.currentTarget.value)} />
+                          <input placeholder="x-api-key*" value={s.fields.apiKey || ""} onChange={e => setApiField(k, "apiKey", e.currentTarget.value)} />
                         )}
                         {(s.authType === "Token" || s.authType === "TokenFormUrlencoded") && (
                           <>
-                            <input placeholder="url_token*" value={s.fields.oauthUrl || ""} onChange={e => setApiField(a.key, "oauthUrl", e.currentTarget.value)} />
-                            <input placeholder="grant_type (client_credentials)" value={s.fields.grantType || ""} onChange={e => setApiField(a.key, "grantType", e.currentTarget.value)} />
-                            <input placeholder="scope (ex.: oob / None)" value={s.fields.scope || ""} onChange={e => setApiField(a.key, "scope", e.currentTarget.value)} />
-                            <input placeholder="key*" value={s.fields.key || ""} onChange={e => setApiField(a.key, "key", e.currentTarget.value)} />
-                            <input placeholder="secret*" value={s.fields.secret || ""} onChange={e => setApiField(a.key, "secret", e.currentTarget.value)} />
+                            <input placeholder="url_token*" value={s.fields.oauthUrl || ""} onChange={e => setApiField(k, "oauthUrl", e.currentTarget.value)} />
+                            <input placeholder="grant_type (client_credentials)" value={s.fields.grantType || ""} onChange={e => setApiField(k, "grantType", e.currentTarget.value)} />
+                            <input placeholder="scope (ex.: oob / None)" value={s.fields.scope || ""} onChange={e => setApiField(k, "scope", e.currentTarget.value)} />
+                            <input placeholder="key*" value={s.fields.key || ""} onChange={e => setApiField(k, "key", e.currentTarget.value)} />
+                            <input placeholder="secret*" value={s.fields.secret || ""} onChange={e => setApiField(k, "secret", e.currentTarget.value)} />
                           </>
                         )}
                         {s.authType === "TokenAPI" && (
                           <>
-                            <input placeholder="url_token*" value={s.fields.oauthUrl || ""} onChange={e => setApiField(a.key, "oauthUrl", e.currentTarget.value)} />
-                            <input placeholder="scope (opcional/None)" value={s.fields.scope || ""} onChange={e => setApiField(a.key, "scope", e.currentTarget.value)} />
-                            <input placeholder="login*" value={s.fields.login || ""} onChange={e => setApiField(a.key, "login", e.currentTarget.value)} />
-                            <input placeholder="senha*" value={s.fields.senha || ""} onChange={e => setApiField(a.key, "senha", e.currentTarget.value)} />
-                            <input placeholder="key (opcional)" value={s.fields.key || ""} onChange={e => setApiField(a.key, "key", e.currentTarget.value)} />
-                            <input placeholder="secret (opcional)" value={s.fields.secret || ""} onChange={e => setApiField(a.key, "secret", e.currentTarget.value)} />
+                            <input placeholder="url_token*" value={s.fields.oauthUrl || ""} onChange={e => setApiField(k, "oauthUrl", e.currentTarget.value)} />
+                            <input placeholder="scope (opcional/None)" value={s.fields.scope || ""} onChange={e => setApiField(k, "scope", e.currentTarget.value)} />
+                            <input placeholder="login*" value={s.fields.login || ""} onChange={e => setApiField(k, "login", e.currentTarget.value)} />
+                            <input placeholder="senha*" value={s.fields.senha || ""} onChange={e => setApiField(k, "senha", e.currentTarget.value)} />
+                            <input placeholder="key (opcional)" value={s.fields.key || ""} onChange={e => setApiField(k, "key", e.currentTarget.value)} />
+                            <input placeholder="secret (opcional)" value={s.fields.secret || ""} onChange={e => setApiField(k, "secret", e.currentTarget.value)} />
                           </>
                         )}
                         {s.authType === "TokenPassword" && (
                           <>
-                            <input placeholder="url_token*" value={s.fields.oauthUrl || ""} onChange={e => setApiField(a.key, "oauthUrl", e.currentTarget.value)} />
-                            <input placeholder="scope*" value={s.fields.scope || ""} onChange={e => setApiField(a.key, "scope", e.currentTarget.value)} />
-                            <input placeholder="key*" value={s.fields.key || ""} onChange={e => setApiField(a.key, "key", e.currentTarget.value)} />
-                            <input placeholder="secret*" value={s.fields.secret || ""} onChange={e => setApiField(a.key, "secret", e.currentTarget.value)} />
-                            <input placeholder="username*" value={s.fields.username || ""} onChange={e => setApiField(a.key, "username", e.currentTarget.value)} />
-                            <input placeholder="password*" value={s.fields.password || ""} onChange={e => setApiField(a.key, "password", e.currentTarget.value)} />
+                            <input placeholder="url_token*" value={s.fields.oauthUrl || ""} onChange={e => setApiField(k, "oauthUrl", e.currentTarget.value)} />
+                            <input placeholder="scope*" value={s.fields.scope || ""} onChange={e => setApiField(k, "scope", e.currentTarget.value)} />
+                            <input placeholder="key*" value={s.fields.key || ""} onChange={e => setApiField(k, "key", e.currentTarget.value)} />
+                            <input placeholder="secret*" value={s.fields.secret || ""} onChange={e => setApiField(k, "secret", e.currentTarget.value)} />
+                            <input placeholder="username*" value={s.fields.username || ""} onChange={e => setApiField(k, "username", e.currentTarget.value)} />
+                            <input placeholder="password*" value={s.fields.password || ""} onChange={e => setApiField(k, "password", e.currentTarget.value)} />
                           </>
                         )}
                         {s.authType === "None" && <span style={{ opacity: .7 }}>Sem credenciais</span>}
