@@ -30,6 +30,8 @@ const LISTENER_APIS: ListenerApi[] = [
   { key: "troubleTicketStateChangeEvent", label: "troubleTicketStateChangeEvent" },
   { key: "workOrderAttributeValueChangeEvent", label: "workOrderAttributeValueChangeEvent" },
   { key: "workOrderStateChangeEvent", label: "workOrderStateChangeEvent" },
+  // ✨ nova API
+  { key: "communicationMessage", label: "communicationMessage" },
 ];
 
 // ===== helpers =====
@@ -72,10 +74,12 @@ function defaultAuthFields(): AuthFields {
   };
 }
 
+// ➕ suporte a URL base por API
 type PerApiConfig = {
   checked: boolean;
   authType: AuthType;
   fields: AuthFields;
+  baseOverride?: string; // URL base (override) opcional
 };
 
 type HistoryItem = {
@@ -137,6 +141,7 @@ export default function WebhookListenerPage() {
   const [mMsg, setMMsg] = useState("");
   const [mBaseUrl, setMBaseUrl] = useState("");
   const [mReplicar, setMReplicar] = useState(true);
+  const [mDeleting, setMDeleting] = useState(false);
 
   // tabs
   const [tab, setTab] = useState<"create" | "manage">("create");
@@ -183,7 +188,7 @@ export default function WebhookListenerPage() {
     setApisState(prev => {
       const next = { ...prev };
       for (const a of apisList) {
-        if (!next[a.key]) next[a.key] = { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
+        if (!next[a.key]) next[a.key] = { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" };
       }
       return next;
     });
@@ -192,24 +197,30 @@ export default function WebhookListenerPage() {
 
   // mutadores comuns
   function initApiStateIfNeeded(k: string) {
-    setApisState(prev => prev[k] ? prev : ({ ...prev, [k]: { checked: false, authType: defaultAuthType, fields: defaultAuthFields() } }));
+    setApisState(prev => prev[k] ? prev : ({ ...prev, [k]: { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" } }));
   }
   function toggleApi(k: string) {
     setApisState(prev => {
-      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
+      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" };
       return { ...prev, [k]: { ...cur, checked: !cur.checked } };
     });
   }
   function setApiAuthType(k: string, t: AuthType) {
     setApisState(prev => {
-      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
+      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" };
       return { ...prev, [k]: { ...cur, authType: t } };
     });
   }
   function setApiField(k: string, f: keyof AuthFields, v: string) {
     setApisState(prev => {
-      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
+      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" };
       return { ...prev, [k]: { ...cur, fields: { ...cur.fields, [f]: v } } };
+    });
+  }
+  function setApiBaseOverride(k: string, v: string) {
+    setApisState(prev => {
+      const cur = prev[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" };
+      return { ...prev, [k]: { ...cur, baseOverride: v } };
     });
   }
 
@@ -257,13 +268,15 @@ export default function WebhookListenerPage() {
 
   function valueArrayForApi(
     apiKey: string,
-    base: string,
+    globalBase: string,
     replicate: boolean,
     auth: AuthType,
     fields: AuthFields,
-    fallback?: { authType?: AuthType; fields?: AuthFields }
+    fallback?: { authType?: AuthType; fields?: AuthFields },
+    perApiBase?: string
   ): string[] {
-    const apiPathName = apiKey.replace(/-v2$/, "");
+    const apiPathName = apiKey.replace(/-v2$/, ""); // path não inclui -v2
+    const base = (perApiBase && perApiBase.trim()) ? perApiBase.trim() : globalBase.trim();
     const path_url = replicate ? `/listener/${apiPathName}` : "-";
     const url_base = dash(base);
 
@@ -368,7 +381,8 @@ export default function WebhookListenerPage() {
         replicar,
         cfg.authType,
         cfg.fields,
-        { authType: defaultAuthType, fields: defaultFields }
+        { authType: defaultAuthType, fields: defaultFields },
+        cfg.baseOverride
       );
 
       entries.push({ name: a.key, value: parts.join("|") });
@@ -410,7 +424,7 @@ export default function WebhookListenerPage() {
     }
   }
 
-  // ======== Manage: listar + carregar + editar + salvar ========
+  // ======== Manage: listar + carregar + editar + salvar + excluir ========
 
   async function mListKvms() {
     if (!mOrg || !mEnv) return;
@@ -531,19 +545,20 @@ export default function WebhookListenerPage() {
 
       const seed: Record<string, PerApiConfig> = {};
       for (const a of LISTENER_APIS) {
-        seed[a.key] = { checked: false, authType: "None", fields: defaultAuthFields() };
+        seed[a.key] = { checked: false, authType: "None", fields: defaultAuthFields(), baseOverride: "" };
       }
 
       for (const e of entries) {
         if (e.name === "00-Legenda") continue;
         const apiKey = e.name;
         if (!(apiKey in seed)) {
-          seed[apiKey] = { checked: true, authType: "None", fields: defaultAuthFields() };
+          seed[apiKey] = { checked: true, authType: "None", fields: defaultAuthFields(), baseOverride: "" };
         }
         const parts = parseCompactValueToParts(e.value);
         const auth = detectAuthTypeFromParts(parts);
         const fields = fieldsFromParts(auth, parts);
-        seed[apiKey] = { checked: true, authType: auth, fields };
+        const perBase = parts[0] && parts[0] !== "-" ? parts[0] : ""; // coluna 1 = url_base
+        seed[apiKey] = { checked: true, authType: auth, fields, baseOverride: perBase };
       }
 
       setApisState(seed);
@@ -577,7 +592,8 @@ export default function WebhookListenerPage() {
           mReplicar,
           cfg.authType,
           cfg.fields,
-          undefined
+          undefined,
+          cfg.baseOverride
         );
         entries.push({ name: api, value: parts.join("|") });
       }
@@ -597,6 +613,27 @@ export default function WebhookListenerPage() {
     } catch (e:any) {
       setMMsg("Falha ao salvar: " + (e.message || String(e)));
       alert("Falha ao salvar KVM: " + (e.message || String(e)));
+    }
+  }
+
+  async function mDeleteKvm() {
+    if (!mOrg || !mEnv || !mKvm) { alert("Selecione org/env/KVM."); return; }
+    if (!confirm(`Excluir o KVM "${mKvm}"? Esta ação é irreversível.`)) return;
+    setMDeleting(true); setMMsg("");
+    try {
+      const qs = `?org=${encodeURIComponent(mOrg)}&env=${encodeURIComponent(mEnv)}`;
+      const res = await fetch(`/api/kvms/${encodeURIComponent(mKvm)}${qs}`, { method: "DELETE" });
+      const j = await res.json().catch(()=> ({}));
+      if (!res.ok) throw new Error(j?.error || res.statusText);
+      setMMsg("KVM excluído com sucesso!");
+      alert("KVM excluído com sucesso!");
+      setMKvm("");
+      await mListKvms();
+    } catch (e:any) {
+      setMMsg("Falha ao excluir: " + (e.message || String(e)));
+      alert("Falha ao excluir KVM: " + (e.message || String(e)));
+    } finally {
+      setMDeleting(false);
     }
   }
 
@@ -695,6 +732,7 @@ export default function WebhookListenerPage() {
             defaultAuthType={defaultAuthType}
             setApiAuthType={setApiAuthType}
             setApiField={setApiField}
+            setApiBaseOverride={setApiBaseOverride}
             toggleApi={toggleApi}
             initApiStateIfNeeded={initApiStateIfNeeded}
           />
@@ -743,8 +781,11 @@ export default function WebhookListenerPage() {
               </select>
             </label>
 
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={mLoadKvm} disabled={!mKvm}>Carregar para edição</button>
+              <button onClick={mDeleteKvm} disabled={!mKvm || mDeleting} title="Excluir KVM permanentemente" style={{ borderColor: "#dc2626" }}>
+                {mDeleting ? "Excluindo..." : "Excluir KVM"}
+              </button>
               {mMsg && <small>{mMsg}</small>}
             </div>
           </section>
@@ -768,6 +809,7 @@ export default function WebhookListenerPage() {
             defaultAuthType={"None"}
             setApiAuthType={setApiAuthType}
             setApiField={setApiField}
+            setApiBaseOverride={setApiBaseOverride}
             toggleApi={toggleApi}
             initApiStateIfNeeded={initApiStateIfNeeded}
           />
@@ -867,6 +909,7 @@ function ApisTable({
   defaultAuthType,
   setApiAuthType,
   setApiField,
+  setApiBaseOverride,
   toggleApi,
   initApiStateIfNeeded,
 }: {
@@ -875,6 +918,7 @@ function ApisTable({
   defaultAuthType: AuthType;
   setApiAuthType: (k: string, t: AuthType) => void;
   setApiField: (k: string, f: keyof AuthFields, v: string) => void;
+  setApiBaseOverride: (k: string, v: string) => void;
   toggleApi: (k: string) => void;
   initApiStateIfNeeded: (k: string) => void;
 }) {
@@ -885,7 +929,7 @@ function ApisTable({
   }, [apis, apisState]);
 
   return (
-    <section className="card" style={{ display: "grid", gap: 10, maxWidth: 1100, marginBottom: 12 }}>
+    <section className="card" style={{ display: "grid", gap: 10, maxWidth: 1200, marginBottom: 12 }}>
       <h3 style={{ margin: 0 }}>APIs listener</h3>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
@@ -895,11 +939,12 @@ function ApisTable({
               <th style={{ textAlign: "left", padding: "6px" }}>API</th>
               <th style={{ textAlign: "left", padding: "6px" }}>Auth type</th>
               <th style={{ textAlign: "left", padding: "6px" }}>Campos por API</th>
+              <th style={{ textAlign: "left", padding: "6px" }}>URL base (override)</th>
             </tr>
           </thead>
           <tbody>
             {keys.map(k => {
-              const s = apisState[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields() };
+              const s = apisState[k] || { checked: false, authType: defaultAuthType, fields: defaultAuthFields(), baseOverride: "" };
               return (
                 <tr key={k} style={{ borderTop: "1px solid var(--border)" }}>
                   <td style={{ padding: "6px" }}>
@@ -966,6 +1011,15 @@ function ApisTable({
                       </div>
                     )}
                   </td>
+                  <td style={{ padding: "6px" }}>
+                    <input
+                      placeholder="URL base (override opcional)"
+                      value={s.baseOverride || ""}
+                      onChange={e => setApiBaseOverride(k, e.currentTarget.value)}
+                      disabled={!s.checked}
+                    />
+                    <div className="small" style={{ opacity: .7 }}>Se vazio, usa a URL base global.</div>
+                  </td>
                 </tr>
               );
             })}
@@ -978,7 +1032,7 @@ function ApisTable({
 
 function HistoryTable({ history, onClear }: { history: any[]; onClear: () => void }) {
   return (
-    <section className="card" style={{ display: "grid", gap: 8, maxWidth: 1100 }}>
+    <section className="card" style={{ display: "grid", gap: 8, maxWidth: 1200 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ margin: 0 }}>Últimos KVMs criados</h3>
         <button onClick={onClear} style={{ borderRadius: 8, padding: "6px 10px", border: "1px solid var(--border,#333)", background: "transparent", color: "var(--fg,#eee)" }}>
